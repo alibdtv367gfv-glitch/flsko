@@ -1,9 +1,10 @@
 import { useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Image, Linking, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { AgentProcessing } from "@/components/agent-processing";
+import { InlineAudioPlayer, InlineVideoPlayer } from "@/components/inline-media-player";
 import { startOAuthLogin } from "@/constants/oauth";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
@@ -100,7 +101,8 @@ export default function CreateScreen() {
               <Text className="text-xs font-bold text-primary">{result.provider === "open-source" ? "مفتوح المصدر" : result.provider === "not-configured" ? "بانتظار الربط" : "مزود سحابي"}</Text>
             </View>
             {result.url && kind === "image" ? <Image source={{ uri: result.url }} className="mt-4 h-64 w-full rounded-2xl" resizeMode="cover" /> : null}
-            {result.url && kind === "music" ? <Pressable onPress={() => void Linking.openURL(result.url!)} className="mt-4 rounded-2xl bg-primary px-4 py-4"><Text className="text-center font-black text-background">فتح المقطع الصوتي</Text></Pressable> : null}
+            {result.url && kind === "video" ? <InlineVideoPlayer source={result.url} /> : null}
+            {result.url && kind === "music" ? <InlineAudioPlayer source={result.url} /> : null}
             <Text className="mt-3 text-sm leading-6 text-muted">{result.message || (result.url ? "تم حفظ النتيجة في التخزين السحابي." : "تم إنشاء المهمة السحابية.")}</Text>
             {result.url && <Pressable onPress={() => reportMutation.mutate({ targetType: kind === "music" ? "image" : kind, targetId: String(result.url), reason: "أبلغ المستخدم عن محتوى مولد يحتاج إلى مراجعة السلامة" })} disabled={reportMutation.isPending} className="mt-3 self-start"><Text className="text-xs font-semibold text-muted">إبلاغ عن هذه النتيجة</Text></Pressable>}
             {!result.url && kind === "video" && <Text className="mt-2 text-xs leading-5 text-warning">لإنتاج فيديو مفتوح المصدر، اربط خادم Wan 2.2 أو LTX عبر FLSKO_VIDEO_PROVIDER_URL في بيئة الخادم.</Text>}
