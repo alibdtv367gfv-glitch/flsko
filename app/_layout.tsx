@@ -5,7 +5,8 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
-import { Platform } from "react-native";
+import { Platform, Text, View } from "react-native";
+import * as Network from "expo-network";
 import "@/lib/_core/nativewind-pressable";
 import { ThemeProvider } from "@/lib/theme-provider";
 import {
@@ -27,6 +28,7 @@ export const unstable_settings = {
 };
 
 export default function RootLayout() {
+  const network = Network.useNetworkState();
   const initialInsets = initialWindowMetrics?.insets ?? DEFAULT_WEB_INSETS;
   const initialFrame = initialWindowMetrics?.frame ?? DEFAULT_WEB_FRAME;
 
@@ -90,6 +92,7 @@ export default function RootLayout() {
             <Stack.Screen name="oauth/callback" />
             <Stack.Screen name="privacy" />
           </Stack>
+          {network.isInternetReachable === false && <View style={{ position: "absolute", top: 12, left: 12, right: 12, zIndex: 20, borderRadius: 16, padding: 12, backgroundColor: "#FFF4E6" }}><Text style={{ color: "#7C3F00", textAlign: "right", fontWeight: "700" }}>لا يوجد اتصال بالإنترنت. يحتاج Flsko إلى شبكة للوصول إلى خدماته؛ إذا كانت الشبكة تحجبها، جرّب تفعيل VPN.</Text></View>}
           <StatusBar style="auto" />
         </QueryClientProvider>
       </trpc.Provider>

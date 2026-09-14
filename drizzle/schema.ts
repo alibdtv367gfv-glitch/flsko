@@ -12,6 +12,20 @@ export const users = mysqlTable("users", {
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
+export const userProfiles = mysqlTable("user_profiles", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  displayName: varchar("displayName", { length: 120 }),
+  gender: mysqlEnum("gender", ["male", "female", "unspecified"]).default("unspecified").notNull(),
+  avatarUrl: text("avatarUrl"),
+  about: text("about"),
+  governorate: varchar("governorate", { length: 80 }),
+  chatBackground: varchar("chatBackground", { length: 16 }).default("#F4F8F7").notNull(),
+  voiceGender: mysqlEnum("voiceGender", ["male", "female"]).default("female").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 export const memories = mysqlTable("memories", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
@@ -63,6 +77,8 @@ export const contentReports = mysqlTable("content_reports", {
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+export type UserProfile = typeof userProfiles.$inferSelect;
+export type InsertUserProfile = typeof userProfiles.$inferInsert;
 export type Memory = typeof memories.$inferSelect;
 export type InsertMemory = typeof memories.$inferInsert;
 export type AgentMessage = typeof agentMessages.$inferSelect;

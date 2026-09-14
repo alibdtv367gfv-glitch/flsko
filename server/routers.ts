@@ -4,6 +4,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
 import { answerAsFlsko, createFlskoImage, createFlskoVideo, getFlskoProviderStatus } from "./flsko-ai";
+import { storagePut } from "./storage";
 
 export const appRouter = router({
   system: router({
@@ -25,7 +26,8 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const memories = await db.listMemories(ctx.user.id);
         const recentConversation = await db.getRecentAgentMessages(ctx.user.id, 8);
-        const result = await answerAsFlsko(input.message, memories.filter((item) => item.consent).map((item) => item.content), recentConversation.reverse().map((item) => ({ role: item.role, content: item.content })), input.excludeSource ? [input.excludeSource] : []);
+        const profile = await db.getUserProfile(ctx.user.id);
+        const result = await answerAsFlsko(input.message, memories.filter((item) => item.consent).map((item) => item.content), recentConversation.reverse().map((item) => ({ role: item.role, content: item.content })), input.excludeSource ? [input.excludeSource] : [], profile);
         await db.createAgentMessage({ userId: ctx.user.id, role: "user", content: input.message });
         await db.createAgentMessage({ userId: ctx.user.id, role: "assistant", content: result.text });
         return result;
@@ -61,6 +63,22 @@ export const appRouter = router({
     remember: protectedProcedure
       .input(z.object({ category: z.string().trim().min(1).max(64), content: z.string().trim().min(1).max(1200), consent: z.literal(true) }))
       .mutation(({ ctx, input }) => db.createMemory({ userId: ctx.user.id, ...input })),
+  }),
+
+  profile: router({
+    get: protectedProcedure.query(({ ctx }) => db.getUserProfile(ctx.user.id)),
+    uploadAvatar: protectedProcedure
+      .input(z.object({ dataUri: z.string().regex(/^data:image\/(png|jpeg|jpg|webp);base64,/).max(5000000) }))
+      .mutation(async ({ ctx, input }) => {
+        const match = input.dataUri.match(/^data:(image\/(?:png|jpeg|jpg|webp));base64,(.+)$/);
+        if (!match) throw new Error("صيغة الصورة غير مدعومة");
+        const stored = await storagePut(`profiles/${ctx.user.id}/avatar`, Buffer.from(match[2], "base64"), match[1]);
+        const existing = await db.getUserProfile(ctx.user.id);
+        return db.upsertUserProfile(ctx.user.id, { displayName: existing?.displayName || undefined, gender: existing?.gender || "unspecified", avatarUrl: stored.url, about: existing?.about || undefined, governorate: existing?.governorate || undefined, chatBackground: existing?.chatBackground || "#F4F8F7", voiceGender: existing?.voiceGender || "female" });
+      }),
+    save: protectedProcedure
+      .input(z.object({ displayName: z.string().trim().max(120).optional(), gender: z.enum(["male", "female", "unspecified"]), avatarUrl: z.string().url().max(2000).optional().or(z.literal("")), about: z.string().trim().max(2000).optional(), governorate: z.string().trim().max(80).optional(), chatBackground: z.string().regex(/^#[0-9A-Fa-f]{6}$/), voiceGender: z.enum(["male", "female"]) }))
+      .mutation(({ ctx, input }) => db.upsertUserProfile(ctx.user.id, input)),
   }),
 
   knowledge: router({

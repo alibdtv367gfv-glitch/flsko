@@ -24,6 +24,7 @@ function voiceMatches(voice: DeviceVoice, gender: VoiceGender) {
 export default function ChatScreen() {
   const colors = useColors();
   const { isAuthenticated } = useAuth();
+  const profile = trpc.profile.get.useQuery(undefined, { enabled: isAuthenticated });
   const [draft, setDraft] = useState("");
   const [voiceGender, setVoiceGender] = useState<VoiceGender>("female");
   const [voices, setVoices] = useState<DeviceVoice[]>([]);
@@ -39,6 +40,12 @@ export default function ChatScreen() {
     });
     return () => { void Speech.stop(); };
   }, []);
+
+  useEffect(() => {
+    const gender = profile.data?.gender;
+    const greeting = gender === "male" ? "أهلا بالحبيب، كيف بقدر ساعدك؟" : gender === "female" ? "أهلا بالأميرة، كيف بقدر ساعد هالجمال؟" : "أهلا، كيف بقدر ساعدك؟";
+    setMessages((current) => current.length === 1 && current[0].id === "welcome" ? [{ ...current[0], content: greeting }] : current);
+  }, [profile.data?.gender]);
 
   const mutation = trpc.agent.chat.useMutation({
     onSuccess: (data, variables) => {
@@ -101,7 +108,7 @@ export default function ChatScreen() {
           </View>
         </View>
 
-        <ScrollView className="mt-5 flex-1" contentContainerStyle={{ gap: 12, paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+        <ScrollView className="mt-5 flex-1 rounded-3xl" style={{ backgroundColor: profile.data?.chatBackground || colors.background }} contentContainerStyle={{ gap: 12, padding: 12, paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
           {messages.map((message) => (
             <View key={message.id} className={`max-w-[88%] rounded-3xl p-4 ${message.role === "user" ? "self-start bg-primary" : "self-end border border-border bg-surface"}`}>
               <Text className="mb-1 text-xs font-bold" style={{ color: message.role === "user" ? colors.background : colors.primary }}>{message.role === "user" ? "أنت" : "فلسقوا"}</Text>

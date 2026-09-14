@@ -12,6 +12,8 @@ import {
   InsertUser,
   knowledgeSources,
   memories,
+  userProfiles,
+  InsertUserProfile,
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -45,6 +47,18 @@ export async function getUserByOpenId(openId: string) {
   const db = await getDb(); if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserProfile(userId: number) {
+  const db = await getDb(); if (!db) return undefined;
+  const result = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
+  return result[0];
+}
+
+export async function upsertUserProfile(userId: number, data: Omit<InsertUserProfile, "id" | "userId" | "createdAt" | "updatedAt">) {
+  const db = await getDb(); if (!db) throw new Error("Database not available");
+  await db.insert(userProfiles).values({ userId, ...data }).onDuplicateKeyUpdate({ set: data });
+  return getUserProfile(userId);
 }
 
 function getInsertId(result: unknown): number { return Number((result as { insertId?: number | bigint }).insertId ?? 0); }
