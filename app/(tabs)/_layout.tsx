@@ -30,6 +30,7 @@ export default function TabLayout() {
     >
       <Tabs.Screen name="index" options={{ title: "الرئيسية", tabBarIcon: ({ color }) => <IconSymbol size={24} name="house.fill" color={color} /> }} />
       <Tabs.Screen name="create" options={{ title: "إنشاء", tabBarIcon: ({ color }) => <IconSymbol size={24} name="wand.and.stars" color={color} /> }} />
+      <Tabs.Screen name="library" options={{ title: "مكتبتي", tabBarIcon: ({ color }) => <IconSymbol size={24} name="folder.fill" color={color} /> }} />
       <Tabs.Screen name="chat" options={{ title: "حوار", tabBarIcon: ({ color }) => <IconSymbol size={24} name="bubble.left.fill" color={color} /> }} />
       <Tabs.Screen name="memory" options={{ title: "ذاكرة", tabBarIcon: ({ color }) => <IconSymbol size={24} name="brain.head.profile" color={color} /> }} />
     </Tabs>

@@ -16,6 +16,7 @@ const MAPPING = {
   "wand.and.stars": "auto-awesome",
   "bubble.left.fill": "chat-bubble",
   "brain.head.profile": "psychology",
+  "folder.fill": "folder",
 } as IconMapping;
 
 export function IconSymbol({

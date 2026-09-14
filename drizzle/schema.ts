@@ -75,6 +75,28 @@ export const contentReports = mysqlTable("content_reports", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+export const userFiles = mysqlTable("user_files", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  mimeType: varchar("mimeType", { length: 160 }).notNull(),
+  kind: mysqlEnum("kind", ["image", "video", "document", "audio", "other"]).notNull(),
+  sizeBytes: int("sizeBytes").default(0).notNull(),
+  storageUrl: text("storageUrl").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const musicGenerations = mysqlTable("music_generations", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  prompt: text("prompt").notNull(),
+  provider: varchar("provider", { length: 128 }),
+  status: mysqlEnum("status", ["queued", "completed", "failed"]).default("queued").notNull(),
+  assetUrl: text("assetUrl"),
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type UserProfile = typeof userProfiles.$inferSelect;
@@ -89,3 +111,7 @@ export type KnowledgeSource = typeof knowledgeSources.$inferSelect;
 export type InsertKnowledgeSource = typeof knowledgeSources.$inferInsert;
 export type ContentReport = typeof contentReports.$inferSelect;
 export type InsertContentReport = typeof contentReports.$inferInsert;
+export type UserFile = typeof userFiles.$inferSelect;
+export type InsertUserFile = typeof userFiles.$inferInsert;
+export type MusicGeneration = typeof musicGenerations.$inferSelect;
+export type InsertMusicGeneration = typeof musicGenerations.$inferInsert;

@@ -14,6 +14,8 @@ import {
   memories,
   userProfiles,
   InsertUserProfile,
+  userFiles,
+  musicGenerations,
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -59,6 +61,28 @@ export async function upsertUserProfile(userId: number, data: Omit<InsertUserPro
   const db = await getDb(); if (!db) throw new Error("Database not available");
   await db.insert(userProfiles).values({ userId, ...data }).onDuplicateKeyUpdate({ set: data });
   return getUserProfile(userId);
+}
+
+export async function createUserFile(data: typeof userFiles.$inferInsert) {
+  const db = await getDb(); if (!db) throw new Error("Database not available");
+  const result = await db.insert(userFiles).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function listUserFiles(userId: number) {
+  const db = await getDb(); if (!db) return [];
+  return db.select().from(userFiles).where(eq(userFiles.userId, userId)).orderBy(desc(userFiles.createdAt));
+}
+
+export async function createMusicGeneration(data: typeof musicGenerations.$inferInsert) {
+  const db = await getDb(); if (!db) throw new Error("Database not available");
+  const result = await db.insert(musicGenerations).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function updateMusicGeneration(id: number, userId: number, data: Partial<typeof musicGenerations.$inferInsert>) {
+  const db = await getDb(); if (!db) return;
+  await db.update(musicGenerations).set(data).where(and(eq(musicGenerations.id, id), eq(musicGenerations.userId, userId)));
 }
 
 function getInsertId(result: unknown): number { return Number((result as { insertId?: number | bigint }).insertId ?? 0); }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { router } from "expo-router";
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import * as Speech from "expo-speech";
 
@@ -25,11 +26,13 @@ export default function ChatScreen() {
   const colors = useColors();
   const { isAuthenticated } = useAuth();
   const profile = trpc.profile.get.useQuery(undefined, { enabled: isAuthenticated });
+  const files = trpc.files.list.useQuery(undefined, { enabled: isAuthenticated });
   const [draft, setDraft] = useState("");
   const [voiceGender, setVoiceGender] = useState<VoiceGender>("female");
   const [voices, setVoices] = useState<DeviceVoice[]>([]);
   const [lastPrompt, setLastPrompt] = useState("");
   const [lastSourceId, setLastSourceId] = useState<string | undefined>();
+  const [selectedFileIds, setSelectedFileIds] = useState<number[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: "welcome", role: "assistant", content: "أنا فلسقوا. احكِ لي ما تريد، وبإمكاني مساعدتك في الفكرة أو النص أو الصورة أو الفيديو." },
   ]);
@@ -79,7 +82,8 @@ export default function ChatScreen() {
     setDraft("");
     setLastPrompt(message);
     setLastSourceId(undefined);
-    mutation.mutate({ message });
+    mutation.mutate({ message, attachmentIds: selectedFileIds });
+    setSelectedFileIds([]);
   };
 
   const retryWithAnotherSource = () => {
@@ -120,7 +124,9 @@ export default function ChatScreen() {
           {!mutation.isPending && lastPrompt && lastSourceId && <Pressable onPress={retryWithAnotherSource} style={({ pressed }) => [pressed && { opacity: 0.75 }]} className="self-center rounded-full border border-primary px-4 py-2"><Text className="text-xs font-bold text-primary">إجابة أخرى من مصدر مختلف</Text></Pressable>}
         </ScrollView>
 
+        {files.data?.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-2"><View className="flex-row gap-2">{files.data.slice(0, 8).map((file) => { const active = selectedFileIds.includes(file.id); return <Pressable key={file.id} onPress={() => setSelectedFileIds((current) => active ? current.filter((id) => id !== file.id) : current.length < 4 ? [...current, file.id] : current)} style={{ backgroundColor: active ? colors.primary : colors.surface, borderColor: active ? colors.primary : colors.border }} className="rounded-full border px-3 py-2"><Text className="max-w-[120px] text-xs font-bold" numberOfLines={1} style={{ color: active ? colors.background : colors.foreground }}>{file.name}</Text></Pressable>; })}</View></ScrollView> : null}
         <View className="mb-2 flex-row items-end gap-2 rounded-3xl border border-border bg-surface p-2">
+          <Pressable onPress={() => router.push("/(tabs)/library")} style={({ pressed }) => [pressed && { opacity: 0.7 }]} className="h-12 w-12 items-center justify-center rounded-2xl border border-border"><Text className="text-xl text-primary">＋</Text></Pressable>
           <TextInput value={draft} onChangeText={setDraft} multiline textAlign="right" placeholder="اكتب رسالتك..." placeholderTextColor={colors.muted} className="max-h-28 min-h-[48px] flex-1 px-3 py-3 text-base text-foreground" />
           <Pressable onPress={send} style={({ pressed }) => [pressed && { opacity: 0.75 }]} className="h-12 w-12 items-center justify-center rounded-2xl bg-primary"><Text className="text-xl font-black text-background">↑</Text></Pressable>
         </View>

@@ -3,7 +3,7 @@ import { COOKIE_NAME } from "../shared/const.js";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
-import { answerAsFlsko, createFlskoImage, createFlskoVideo, getFlskoProviderStatus } from "./flsko-ai";
+import { answerAsFlsko, createFlskoImage, createFlskoVideo, createFlskoMusic, getFlskoProviderStatus } from "./flsko-ai";
 import { storagePut } from "./storage";
 
 export const appRouter = router({
@@ -22,12 +22,14 @@ export const appRouter = router({
     status: publicProcedure.query(() => getFlskoProviderStatus()),
 
     chat: protectedProcedure
-      .input(z.object({ message: z.string().trim().min(1).max(6000), excludeSource: z.string().max(64).optional() }))
+      .input(z.object({ message: z.string().trim().min(1).max(6000), excludeSource: z.string().max(64).optional(), attachmentIds: z.array(z.number().int().positive()).max(4).optional() }))
       .mutation(async ({ ctx, input }) => {
         const memories = await db.listMemories(ctx.user.id);
         const recentConversation = await db.getRecentAgentMessages(ctx.user.id, 8);
         const profile = await db.getUserProfile(ctx.user.id);
-        const result = await answerAsFlsko(input.message, memories.filter((item) => item.consent).map((item) => item.content), recentConversation.reverse().map((item) => ({ role: item.role, content: item.content })), input.excludeSource ? [input.excludeSource] : [], profile);
+        const files = await db.listUserFiles(ctx.user.id);
+        const attachments = files.filter((file) => input.attachmentIds?.includes(file.id)).map((file) => ({ name: file.name, mimeType: file.mimeType, storageUrl: file.storageUrl }));
+        const result = await answerAsFlsko(input.message, memories.filter((item) => item.consent).map((item) => item.content), recentConversation.reverse().map((item) => ({ role: item.role, content: item.content })), input.excludeSource ? [input.excludeSource] : [], profile, attachments);
         await db.createAgentMessage({ userId: ctx.user.id, role: "user", content: input.message });
         await db.createAgentMessage({ userId: ctx.user.id, role: "assistant", content: result.text });
         return result;
@@ -56,6 +58,20 @@ export const appRouter = router({
           throw error;
         }
       }),
+    music: protectedProcedure
+      .input(z.object({ prompt: z.string().trim().min(3).max(4000) }))
+      .mutation(async ({ ctx, input }) => {
+        const id = await db.createMusicGeneration({ userId: ctx.user.id, prompt: input.prompt, status: "queued" });
+        try {
+          const result = await createFlskoMusic(input.prompt);
+          await db.updateMusicGeneration(id, ctx.user.id, { status: result.status === "completed" ? "completed" : "queued", provider: result.provider, assetUrl: result.url });
+          return { id, ...result };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "تعذر إنشاء الموسيقى";
+          await db.updateMusicGeneration(id, ctx.user.id, { status: "failed", errorMessage: message });
+          throw error;
+        }
+      }),
   }),
 
   memory: router({
@@ -77,8 +93,23 @@ export const appRouter = router({
         return db.upsertUserProfile(ctx.user.id, { displayName: existing?.displayName || undefined, gender: existing?.gender || "unspecified", avatarUrl: stored.url, about: existing?.about || undefined, governorate: existing?.governorate || undefined, chatBackground: existing?.chatBackground || "#F4F8F7", voiceGender: existing?.voiceGender || "female" });
       }),
     save: protectedProcedure
-      .input(z.object({ displayName: z.string().trim().max(120).optional(), gender: z.enum(["male", "female", "unspecified"]), avatarUrl: z.string().url().max(2000).optional().or(z.literal("")), about: z.string().trim().max(2000).optional(), governorate: z.string().trim().max(80).optional(), chatBackground: z.string().regex(/^#[0-9A-Fa-f]{6}$/), voiceGender: z.enum(["male", "female"]) }))
+      .input(z.object({ displayName: z.string().trim().max(120).optional(), gender: z.enum(["male", "female", "unspecified"]), avatarUrl: z.string().max(2000).refine((value) => value === "" || value.startsWith("/") || /^https?:\/\//.test(value), "رابط الصورة غير صالح").optional(), about: z.string().trim().max(2000).optional(), governorate: z.string().trim().max(80).optional(), chatBackground: z.string().regex(/^#[0-9A-Fa-f]{6}$/), voiceGender: z.enum(["male", "female"]) }))
       .mutation(({ ctx, input }) => db.upsertUserProfile(ctx.user.id, input)),
+  }),
+
+  files: router({
+    list: protectedProcedure.query(({ ctx }) => db.listUserFiles(ctx.user.id)),
+    upload: protectedProcedure
+      .input(z.object({ name: z.string().trim().min(1).max(255), mimeType: z.string().trim().min(1).max(160), dataUri: z.string().regex(/^data:[^;]+;base64,/).max(15000000) }))
+      .mutation(async ({ ctx, input }) => {
+        const match = input.dataUri.match(/^data:([^;]+);base64,(.+)$/);
+        if (!match) throw new Error("صيغة الملف غير مدعومة");
+        const kind = match[1].startsWith("image/") ? "image" : match[1].startsWith("video/") ? "video" : match[1].startsWith("audio/") ? "audio" : ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"].includes(match[1]) ? "document" : "other";
+        const buffer = Buffer.from(match[2], "base64");
+        const stored = await storagePut(`user-files/${ctx.user.id}/${input.name}`, buffer, match[1]);
+        const id = await db.createUserFile({ userId: ctx.user.id, name: input.name, mimeType: match[1], kind, sizeBytes: buffer.length, storageUrl: stored.url });
+        return { id, url: stored.url, kind };
+      }),
   }),
 
   knowledge: router({
