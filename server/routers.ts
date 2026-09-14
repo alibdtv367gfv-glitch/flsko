@@ -21,11 +21,11 @@ export const appRouter = router({
     status: publicProcedure.query(() => getFlskoProviderStatus()),
 
     chat: protectedProcedure
-      .input(z.object({ message: z.string().trim().min(1).max(6000) }))
+      .input(z.object({ message: z.string().trim().min(1).max(6000), excludeSource: z.string().max(64).optional() }))
       .mutation(async ({ ctx, input }) => {
         const memories = await db.listMemories(ctx.user.id);
         const recentConversation = await db.getRecentAgentMessages(ctx.user.id, 8);
-        const result = await answerAsFlsko(input.message, memories.filter((item) => item.consent).map((item) => item.content), recentConversation.reverse().map((item) => ({ role: item.role, content: item.content })));
+        const result = await answerAsFlsko(input.message, memories.filter((item) => item.consent).map((item) => item.content), recentConversation.reverse().map((item) => ({ role: item.role, content: item.content })), input.excludeSource ? [input.excludeSource] : []);
         await db.createAgentMessage({ userId: ctx.user.id, role: "user", content: input.message });
         await db.createAgentMessage({ userId: ctx.user.id, role: "assistant", content: result.text });
         return result;
