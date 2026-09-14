@@ -27,13 +27,21 @@ FLSKO_OPENAI_MODEL=gpt-4o-mini
 FLSKO_LLM_PROVIDER_URL=https://your-openai-compatible-endpoint/v1/chat/completions
 FLSKO_LLM_PROVIDER_KEY=optional-secret
 FLSKO_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
+FLSKO_RESEARCH_PROVIDER_URL=https://your-open-research-endpoint/search
+FLSKO_RESEARCH_PROVIDER_KEY=optional-secret
 FLSKO_IMAGE_PROVIDER_URL=https://your-image-provider/generate
 FLSKO_IMAGE_MODEL=stabilityai/stable-diffusion-xl-base-1.0
 FLSKO_VIDEO_PROVIDER_URL=https://your-video-provider/generate
 FLSKO_VIDEO_MODEL=Wan-AI/Wan2.2-TI2V-5B
 ```
 
-التحقق من أسماء نماذج Gemini يتغير بمرور الوقت، لذلك يجب تأكيد الاسم من كتالوج Google عند إعداد البيئة. المزود المفتوح للمحادثة متوقع أن يكون متوافقًا مع OpenAI Chat Completions. مزود الصورة متوقع أن يعيد `{ "url": "https://.../asset.png" }`، ومزود الفيديو متوقع أن يعيد `{ "url": "https://.../asset.mp4", "job_id": "optional-id" }`.
+التحقق من أسماء نماذج Gemini يتغير بمرور الوقت، لذلك يجب تأكيد الاسم من كتالوج Google عند إعداد البيئة. المزود المفتوح للمحادثة متوقع أن يكون متوافقًا مع OpenAI Chat Completions. مزود البحث المفتوح يستقبل `{ "query": "...", "language": "ar", "include_sources": true }` ويعيد `answer` أو `text` أو `summary`، ويمكنه إعادة قائمة `sources`. عند تفعيله، يبحث Flsko هناك بالتوازي مع قنوات الذكاء الاصطناعي، ثم يقارن النتيجة قبل صياغة جواب واحد. مزود الصورة متوقع أن يعيد `{ "url": "https://.../asset.png" }`، ومزود الفيديو متوقع أن يعيد `{ "url": "https://.../asset.mp4", "job_id": "optional-id" }`.
+
+## مساحة المعرفة السورية
+
+توجد طبقة `server/syrian-knowledge.ts` داخل الخادم السحابي، وتحتوي على إرشادات غير تنميطية للتنوع بين المحافظات والبيئات واللهجات، مع كشف لطيف لمؤشرات اللهجة من رسالة المستخدم. لا تفترض الطبقة محافظة أو طائفة أو عِرقًا أو موقفًا سياسيًا، ولا تقلّد اللهجة بشكل كاريكاتوري. تتغير النبرة تلقائيًا: مزاح محترم عند المزاح، وصياغة عملية صارمة عند طلب الخطوات أو المعلومات الدقيقة. يستطيع المستخدم تصحيح اللهجة، ولا يُحفظ التصحيح كذاكرة إلا بموافقته.
+
+التعلم من المحادثة هو تعلم شخصي قابل للتحكم، وليس تدريبًا خفيًا على جميع المستخدمين. الذاكرة تُسجل فقط عبر إجراء موافق عليه، ومصادر الثقافة العامة تمر بحالة مراجعة قبل دخولها إلى قاعدة المعرفة. يمكن لاحقًا إضافة لوحة تحرير سحابية للمصادر الموثقة، مع تصنيف المحافظة والموضوع والجيل واللهجة، وسجل للمراجعة وإمكانية سحب المصدر.
 
 ## الخصوصية والأمان
 

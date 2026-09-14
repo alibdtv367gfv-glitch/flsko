@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
@@ -35,12 +35,10 @@ export default function HomeScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 30 }}>
         <View className="flex-row items-center justify-between">
           <View>
-            <Text className="text-sm font-semibold text-primary">FLSKO / 01</Text>
+            <Text className="text-sm font-semibold text-primary">Flsko / 01</Text>
             <Text className="mt-1 text-3xl font-bold text-foreground">أهلًا بك</Text>
           </View>
-          <View className="h-12 w-12 items-center justify-center rounded-2xl bg-primary">
-            <Text className="text-2xl font-black text-background">F</Text>
-          </View>
+          <Image source={require("../../assets/images/icon.png")} className="h-12 w-12 rounded-2xl" resizeMode="contain" />
         </View>
 
         <View className="mt-6 rounded-[28px] bg-primary p-5">
@@ -97,9 +95,12 @@ export default function HomeScreen() {
 
         <View className="mt-5 flex-row items-start gap-2 px-1">
           <Text className="text-sm text-primary">⌁</Text>
-          <Text className="flex-1 text-xs leading-5 text-muted">
-            لا يقرأ Flsko حسابات خاصة ولا يجمع محتوى من الشبكات الاجتماعية تلقائيًا. أضف فقط روابط عامة تملك حق استخدامها وبموافقة واضحة.
-          </Text>
+          <View className="flex-1">
+            <Text className="text-xs leading-5 text-muted">لا يقرأ Flsko حسابات خاصة ولا يجمع محتوى من الشبكات الاجتماعية تلقائيًا. أضف فقط روابط عامة تملك حق استخدامها وبموافقة واضحة.</Text>
+            <Pressable onPress={() => router.push("/privacy")} style={({ pressed }) => [pressed && { opacity: 0.7 }]} className="mt-2 self-start">
+              <Text className="text-xs font-bold text-primary">اقرأ سياسة الخصوصية</Text>
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
     </ScreenContainer>

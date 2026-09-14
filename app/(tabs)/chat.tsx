@@ -27,6 +27,14 @@ export default function ChatScreen() {
     },
     onError: (error) => Alert.alert("تعذر الرد", error.message || "حاول مرة أخرى.")
   });
+  const reportMutation = trpc.safety.report.useMutation();
+
+  const reportMessage = (messageId: string) => {
+    Alert.alert("الإبلاغ عن المحتوى", "هل تريد الإبلاغ عن هذه الإجابة لمراجعة السلامة؟", [
+      { text: "إلغاء", style: "cancel" },
+      { text: "محتوى ضار", onPress: () => reportMutation.mutate({ targetType: "chat", targetId: messageId, reason: "أبلغ المستخدم عن محتوى يحتاج إلى مراجعة السلامة" }) },
+    ]);
+  };
 
   const send = () => {
     if (!isAuthenticated) {
@@ -51,6 +59,7 @@ export default function ChatScreen() {
             <View key={message.id} className={`max-w-[88%] rounded-3xl p-4 ${message.role === "user" ? "self-start bg-primary" : "self-end border border-border bg-surface"}`}>
               <Text className="mb-1 text-xs font-bold" style={{ color: message.role === "user" ? colors.background : colors.primary }}>{message.role === "user" ? "أنت" : "فلسقوا"}</Text>
               <Text className="text-base leading-7" style={{ color: message.role === "user" ? colors.background : colors.foreground }}>{message.content}</Text>
+              {message.role === "assistant" && message.id !== "welcome" && <Pressable onPress={() => reportMessage(message.id)} disabled={reportMutation.isPending} className="mt-3 self-start"><Text className="text-xs font-semibold text-muted">إبلاغ عن هذه الإجابة</Text></Pressable>}
             </View>
           ))}
           {mutation.isPending && <AgentProcessing mode="chat" />}

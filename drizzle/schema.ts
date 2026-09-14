@@ -52,6 +52,15 @@ export const knowledgeSources = mysqlTable("knowledge_sources", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+export const contentReports = mysqlTable("content_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  targetType: mysqlEnum("targetType", ["chat", "image", "video"]).notNull(),
+  targetId: varchar("targetId", { length: 128 }),
+  reason: text("reason").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Memory = typeof memories.$inferSelect;
@@ -62,3 +71,5 @@ export type Generation = typeof generations.$inferSelect;
 export type InsertGeneration = typeof generations.$inferInsert;
 export type KnowledgeSource = typeof knowledgeSources.$inferSelect;
 export type InsertKnowledgeSource = typeof knowledgeSources.$inferInsert;
+export type ContentReport = typeof contentReports.$inferSelect;
+export type InsertContentReport = typeof contentReports.$inferInsert;

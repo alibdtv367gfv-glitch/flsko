@@ -15,6 +15,13 @@
       "when": 1789398916037,
       "tag": "0001_clean_the_twelve",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1789399815249,
+      "tag": "0002_striped_ghost_rider",
+      "breakpoints": true
     }
   ]
 }

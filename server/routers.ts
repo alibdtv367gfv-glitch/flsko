@@ -24,7 +24,8 @@ export const appRouter = router({
       .input(z.object({ message: z.string().trim().min(1).max(6000) }))
       .mutation(async ({ ctx, input }) => {
         const memories = await db.listMemories(ctx.user.id);
-        const result = await answerAsFlsko(input.message, memories.filter((item) => item.consent).map((item) => item.content));
+        const recentConversation = await db.getRecentAgentMessages(ctx.user.id, 8);
+        const result = await answerAsFlsko(input.message, memories.filter((item) => item.consent).map((item) => item.content), recentConversation.reverse().map((item) => ({ role: item.role, content: item.content })));
         await db.createAgentMessage({ userId: ctx.user.id, role: "user", content: input.message });
         await db.createAgentMessage({ userId: ctx.user.id, role: "assistant", content: result.text });
         return result;
@@ -67,6 +68,12 @@ export const appRouter = router({
     submitPublicSource: protectedProcedure
       .input(z.object({ url: z.string().url().max(2000), title: z.string().trim().max(255).optional(), permission: z.literal(true) }))
       .mutation(({ ctx, input }) => db.createKnowledgeSource({ userId: ctx.user.id, ...input })),
+  }),
+
+  safety: router({
+    report: protectedProcedure
+      .input(z.object({ targetType: z.enum(["chat", "image", "video"]), targetId: z.string().max(128).optional(), reason: z.string().trim().min(3).max(1000) }))
+      .mutation(({ ctx, input }) => db.createContentReport({ userId: ctx.user.id, ...input })),
   }),
 });
 

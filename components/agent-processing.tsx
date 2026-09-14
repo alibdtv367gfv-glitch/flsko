@@ -5,7 +5,7 @@ import { useColors } from "@/hooks/use-colors";
 
 type ProcessingMode = "chat" | "media";
 
-const chatStages = ["أفهم طلبك…", "أقارن أفضل الإجابات…", "أصيغها بطريقتك…"];
+const chatStages = ["أفهم طلبك…", "أبحث في المصادر المتاحة…", "أقارن النتائج…", "أحللها وأصيغها بطريقتك…"];
 const mediaStages = ["أفهم فكرتك…", "أوازن الجودة والسرعة…", "أجهّز النتيجة…"];
 
 export function AgentProcessing({ mode = "chat" }: { mode?: ProcessingMode }) {

@@ -20,6 +20,7 @@ export default function CreateScreen() {
     onSuccess: (data) => setResult(data),
     onError: (error) => Alert.alert("لم يكتمل الطلب", error.message || "تحقق من اتصال الخادم."),
   });
+  const reportMutation = trpc.safety.report.useMutation();
 
   useEffect(() => {
     if (params.kind === "video") setKind("video");
@@ -98,6 +99,7 @@ export default function CreateScreen() {
             </View>
             {result.url && kind === "image" ? <Image source={{ uri: result.url }} className="mt-4 h-64 w-full rounded-2xl" resizeMode="cover" /> : null}
             <Text className="mt-3 text-sm leading-6 text-muted">{result.message || (result.url ? "تم حفظ النتيجة في التخزين السحابي." : "تم إنشاء المهمة السحابية.")}</Text>
+            {result.url && <Pressable onPress={() => reportMutation.mutate({ targetType: kind, targetId: String(result.url), reason: "أبلغ المستخدم عن محتوى مولد يحتاج إلى مراجعة السلامة" })} disabled={reportMutation.isPending} className="mt-3 self-start"><Text className="text-xs font-semibold text-muted">إبلاغ عن هذه النتيجة</Text></Pressable>}
             {!result.url && kind === "video" && <Text className="mt-2 text-xs leading-5 text-warning">لإنتاج فيديو مفتوح المصدر، اربط خادم Wan 2.2 أو LTX عبر FLSKO_VIDEO_PROVIDER_URL في بيئة الخادم.</Text>}
           </View>
         )}
