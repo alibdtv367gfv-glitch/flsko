@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { AgentProcessing } from "@/components/agent-processing";
 import { startOAuthLogin } from "@/constants/oauth";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
@@ -52,7 +53,7 @@ export default function ChatScreen() {
               <Text className="text-base leading-7" style={{ color: message.role === "user" ? colors.background : colors.foreground }}>{message.content}</Text>
             </View>
           ))}
-          {mutation.isPending && <View className="self-end rounded-3xl border border-border bg-surface p-4"><ActivityIndicator color={colors.primary} /></View>}
+          {mutation.isPending && <AgentProcessing mode="chat" />}
         </ScrollView>
 
         <View className="mb-2 flex-row items-end gap-2 rounded-3xl border border-border bg-surface p-2">

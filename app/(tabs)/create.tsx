@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { AgentProcessing } from "@/components/agent-processing";
 import { startOAuthLogin } from "@/constants/oauth";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
@@ -86,6 +87,7 @@ export default function CreateScreen() {
             {mutation.isPending && <ActivityIndicator color={colors.background} />}
             <Text className="font-black text-background">{mutation.isPending ? "جارٍ الإبداع..." : `إنشاء ${kind === "image" ? "الصورة" : "الفيديو"}`}</Text>
           </Pressable>
+          {mutation.isPending && <AgentProcessing mode="media" />}
         </View>
 
         {result && (
