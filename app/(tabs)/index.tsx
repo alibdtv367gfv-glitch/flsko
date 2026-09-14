@@ -70,7 +70,7 @@ export default function HomeScreen() {
           <ActionCard icon="◉" title="فيديو" subtitle="جهّز مشهدًا لـ Wan أو LTX" onPress={() => router.push("/create?kind=video")} />
         </View>
         <View className="mt-3 flex-row gap-3">
-          <ActionCard icon="◌" title="احكِ مع Flsko" subtitle="يفهم العربية واللهجات السورية" onPress={() => router.push("/chat")} />
+          <ActionCard icon="◌" title="احكِ مع فلسقوا" subtitle="يفهم العربية واللهجات السورية" onPress={() => router.push("/chat")} />
           <ActionCard icon="⌁" title="ذاكرتي" subtitle="ما وافقتَ أن يتذكره فقط" onPress={() => router.push("/memory")} />
         </View>
 
@@ -98,7 +98,7 @@ export default function HomeScreen() {
         <View className="mt-5 flex-row items-start gap-2 px-1">
           <Text className="text-sm text-primary">⌁</Text>
           <Text className="flex-1 text-xs leading-5 text-muted">
-            لا يقرأ Flsko حسابات خاصة ولا يجمع محتوى من الشبكات الاجتماعية تلقائيًا. أضف فقط روابط عامة تملك حق استخدامها وبموافقة واضحة.
+            لا يقرأ فلسقوا حسابات خاصة ولا يجمع محتوى من الشبكات الاجتماعية تلقائيًا. أضف فقط روابط عامة تملك حق استخدامها وبموافقة واضحة.
           </Text>
         </View>
       </ScrollView>

@@ -36,7 +36,7 @@ export default function MemoryScreen() {
         <Text className="mt-2 text-sm leading-6 text-muted">أنت من يقرر ما الذي يبقى. يمكنك حذف هذه الطبقة لاحقًا من لوحة الحساب.</Text>
 
         <View className="mt-6 rounded-3xl border border-border bg-surface p-4">
-          <Text className="text-base font-bold text-foreground">أضف تفضيلًا يتذكره Flsko</Text>
+          <Text className="text-base font-bold text-foreground">أضف تفضيلًا يتذكره فلسقوا</Text>
           <TextInput value={memory} onChangeText={setMemory} multiline textAlign="right" placeholder="مثال: أفضل أن تكون الإجابات مختصرة وباللهجة الشامية عند الإمكان" placeholderTextColor={colors.muted} className="mt-3 min-h-[92px] rounded-2xl border border-border bg-background p-4 text-sm leading-6 text-foreground" />
           <Pressable disabled={remember.isPending} onPress={() => remember.mutate({ category: "preference", content: memory.trim(), consent: true })} style={({ pressed }) => [pressed && { opacity: 0.8 }]} className="mt-3 self-start rounded-full bg-primary px-5 py-3"><Text className="font-bold text-background">حفظ بموافقتي</Text></Pressable>
         </View>
@@ -52,7 +52,7 @@ export default function MemoryScreen() {
           <TextInput value={source} onChangeText={setSource} autoCapitalize="none" keyboardType="url" placeholder="https://..." placeholderTextColor={colors.muted} className="mt-3 rounded-2xl border border-border bg-background px-4 py-3 text-sm text-foreground" />
           <Pressable onPress={() => submitSource.mutate({ url: source.trim(), permission: true })} style={({ pressed }) => [pressed && { opacity: 0.8 }]} className="mt-3 self-start rounded-full bg-foreground px-5 py-3"><Text className="font-bold text-background">إرسال للمراجعة</Text></Pressable>
         </View>
-        <Text className="mt-4 text-xs leading-5 text-muted">المصادر المضافة: {sources.data?.length || 0} · تمر بمراجعة قبل دخولها إلى معرفة Flsko العامة.</Text>
+        <Text className="mt-4 text-xs leading-5 text-muted">المصادر المضافة: {sources.data?.length || 0} · تمر بمراجعة قبل دخولها إلى معرفة فلسقوا العامة.</Text>
       </ScrollView>
     </ScreenContainer>
   );

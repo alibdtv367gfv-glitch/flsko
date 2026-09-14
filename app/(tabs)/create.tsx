@@ -47,7 +47,7 @@ export default function CreateScreen() {
   return (
     <ScreenContainer className="px-5 pt-4">
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
-        <Text className="text-sm font-semibold text-primary">استوديو Flsko</Text>
+        <Text className="text-sm font-semibold text-primary">استوديو فلسقوا</Text>
         <Text className="mt-2 text-3xl font-black text-foreground">اصنع بصريًا</Text>
         <Text className="mt-2 text-sm leading-6 text-muted">تصل الطلبات إلى مزود سحابي قابل للتبديل بدل ربط التطبيق بشبكة واحدة.</Text>
 

@@ -14,7 +14,7 @@ export default function ChatScreen() {
   const { isAuthenticated } = useAuth();
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { id: "welcome", role: "assistant", content: "أنا Flsko. احكِ لي ما تريد، وبإمكاني مساعدتك في الفكرة أو النص أو الصورة أو الفيديو." },
+    { id: "welcome", role: "assistant", content: "أنا فلسقوا. احكِ لي ما تريد، وبإمكاني مساعدتك في الفكرة أو النص أو الصورة أو الفيديو." },
   ]);
   const mutation = trpc.agent.chat.useMutation({
     onSuccess: (data, variables) => {
@@ -42,13 +42,13 @@ export default function ChatScreen() {
     <ScreenContainer className="px-5 pt-4">
       <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <Text className="text-sm font-semibold text-primary">مساحة الحوار</Text>
-        <Text className="mt-2 text-3xl font-black text-foreground">احكِ مع Flsko</Text>
+        <Text className="mt-2 text-3xl font-black text-foreground">احكِ مع فلسقوا</Text>
         <Text className="mt-2 text-sm leading-6 text-muted">يفهم العربية واللهجات السورية، ويتعلم فقط ما تختار حفظه.</Text>
 
         <ScrollView className="mt-5 flex-1" contentContainerStyle={{ gap: 12, paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
           {messages.map((message) => (
             <View key={message.id} className={`max-w-[88%] rounded-3xl p-4 ${message.role === "user" ? "self-start bg-primary" : "self-end border border-border bg-surface"}`}>
-              <Text className="mb-1 text-xs font-bold" style={{ color: message.role === "user" ? colors.background : colors.primary }}>{message.role === "user" ? "أنت" : "Flsko"}</Text>
+              <Text className="mb-1 text-xs font-bold" style={{ color: message.role === "user" ? colors.background : colors.primary }}>{message.role === "user" ? "أنت" : "فلسقوا"}</Text>
               <Text className="text-base leading-7" style={{ color: message.role === "user" ? colors.background : colors.foreground }}>{message.content}</Text>
             </View>
           ))}
