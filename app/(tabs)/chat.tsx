@@ -42,7 +42,7 @@ export default function ChatScreen() {
     <ScreenContainer className="px-5 pt-4">
       <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <Text className="text-sm font-semibold text-primary">مساحة الحوار</Text>
-        <Text className="mt-2 text-3xl font-black text-foreground">احكِ مع فلسقوا</Text>
+        <Text className="mt-2 text-3xl font-black text-foreground">احكِ مع Flsko</Text>
         <Text className="mt-2 text-sm leading-6 text-muted">يفهم العربية واللهجات السورية، ويتعلم فقط ما تختار حفظه.</Text>
 
         <ScrollView className="mt-5 flex-1" contentContainerStyle={{ gap: 12, paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
