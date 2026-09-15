@@ -8,6 +8,47 @@ import { storagePut } from "./storage";
 import { assertRateLimit } from "./rate-limit";
 import { deliverSuggestionEmail } from "./suggestions";
 import { transcribeAudio } from "./_core/voiceTranscription";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+const projectRoot = process.cwd();
+const protectedProjectFiles = new Set([".env", ".env.local", ".env.production"]);
+const ignoredProjectDirs = new Set(["node_modules", ".git", ".expo", "dist"]);
+const developmentCookieName = "flsko-dev-unlocked";
+
+function developmentToken(userId: number, issuedAt: number) {
+  const payload = `${userId}.${issuedAt}`;
+  const signature = createHmac("sha256", process.env.JWT_SECRET || "flsko-development-session").update(payload).digest("hex");
+  return `${payload}.${signature}`;
+}
+
+function isDevelopmentUnlocked(req: { headers: { cookie?: string } }, userId: number) {
+  const raw = req.headers.cookie?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${developmentCookieName}=`))?.slice(developmentCookieName.length + 1);
+  if (!raw) return false;
+  const [tokenUser, issuedAtText, signature] = raw.split(".");
+  const issuedAt = Number(issuedAtText);
+  if (tokenUser !== String(userId) || !Number.isFinite(issuedAt) || Date.now() - issuedAt > 30 * 60 * 1000 || !signature) return false;
+  const expected = developmentToken(userId, issuedAt).split(".").pop() || "";
+  if (signature.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+}
+
+function requireDevelopmentSession(ctx: { req: { headers: { cookie?: string } }; user: { id: number } }) {
+  if (!isDevelopmentUnlocked(ctx.req, ctx.user.id)) throw new Error("انتهت جلسة بوابة التطوير. أدخل كلمات المرور الثلاث مجددًا.");
+}
+
+async function listProjectFiles(dir = projectRoot, prefix = ""): Promise<string[]> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const result: string[] = [];
+  for (const entry of entries) {
+    if (ignoredProjectDirs.has(entry.name)) continue;
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) result.push(...await listProjectFiles(path.join(dir, entry.name), relative));
+    else if (!protectedProjectFiles.has(entry.name)) result.push(relative);
+  }
+  return result.sort();
+}
 
 export const appRouter = router({
   system: router({
@@ -180,6 +221,32 @@ export const appRouter = router({
         }
       }),
     adminList: adminProcedure.query(() => db.listSuggestionsForAdmin()),
+  }),
+  development: router({
+    unlock: adminProcedure
+      .input(z.object({ passwordOne: z.string().min(1).max(256), passwordTwo: z.string().min(1).max(256), passwordThree: z.string().min(1).max(256) }))
+      .mutation(({ ctx, input }) => {
+        const expected = [process.env.FLSKO_DEV_PASSWORD_1, process.env.FLSKO_DEV_PASSWORD_2, process.env.FLSKO_DEV_PASSWORD_3];
+        const valid = expected.every((value, index) => Boolean(value) && value === [input.passwordOne, input.passwordTwo, input.passwordThree][index]);
+        if (!valid) throw new Error("كلمات مرور بوابة التطوير غير صحيحة أو غير مهيأة.");
+        const issuedAt = Date.now();
+        ctx.res.cookie(developmentCookieName, developmentToken(ctx.user.id, issuedAt), { httpOnly: true, sameSite: "lax", secure: ctx.req.protocol === "https", maxAge: 30 * 60 * 1000, path: "/" });
+        return { unlocked: true as const };
+      }),
+    stats: adminProcedure.query(({ ctx }) => { requireDevelopmentSession(ctx); return db.getAdminStats(); }),
+    files: adminProcedure.query(async ({ ctx }) => { requireDevelopmentSession(ctx); return { files: await listProjectFiles() }; }),
+    file: adminProcedure
+      .input(z.object({ relativePath: z.string().min(1).max(240) }))
+      .query(async ({ ctx, input }) => {
+        requireDevelopmentSession(ctx);
+        const normalized = path.posix.normalize(input.relativePath).replace(/^\.\//, "");
+        if (normalized.startsWith("..") || normalized.split("/").some((part) => protectedProjectFiles.has(part))) throw new Error("الملف غير متاح عبر البوابة.");
+        const absolute = path.resolve(projectRoot, normalized);
+        if (!absolute.startsWith(`${projectRoot}${path.sep}`)) throw new Error("مسار غير صالح");
+        const stat = await fs.stat(absolute);
+        if (!stat.isFile() || stat.size > 2_000_000) throw new Error("الملف غير متاح أو حجمه كبير للعرض المباشر.");
+        return { relativePath: normalized, content: await fs.readFile(absolute, "utf8") };
+      }),
   }),
 });
 

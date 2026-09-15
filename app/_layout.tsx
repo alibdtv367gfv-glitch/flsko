@@ -93,6 +93,7 @@ export default function RootLayout() {
             <Stack.Screen name="privacy" />
             <Stack.Screen name="suggestions" />
             <Stack.Screen name="download" />
+            <Stack.Screen name="development" />
             <Stack.Screen name="admin-suggestions" />
           </Stack>
           {network.isInternetReachable === false && <View style={{ position: "absolute", top: 12, left: 12, right: 12, zIndex: 20, borderRadius: 16, padding: 12, backgroundColor: "#FFF4E6" }}><Text style={{ color: "#7C3F00", textAlign: "right", fontWeight: "700" }}>لا يوجد اتصال بالإنترنت. يحتاج Flsko إلى شبكة للوصول إلى خدماته؛ إذا كانت الشبكة تحجبها، جرّب تفعيل VPN.</Text></View>}

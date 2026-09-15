@@ -138,6 +138,22 @@ export async function listSuggestionsForAdmin() {
   return db.select({ id: suggestions.id, category: suggestions.category, content: suggestions.content, emailStatus: suggestions.emailStatus, createdAt: suggestions.createdAt, userName: users.name, userEmail: users.email }).from(suggestions).leftJoin(users, eq(suggestions.userId, users.id)).orderBy(desc(suggestions.createdAt));
 }
 
+export async function getAdminStats() {
+  const db = await getDb();
+  if (!db) return { users: 0, chatRequests: 0, completedGenerations: 0, completedMusic: 0, totalRequests: 0 };
+  const [userRows, chatRows, generationRows, musicRows] = await Promise.all([
+    db.select({ total: count() }).from(users),
+    db.select({ total: count() }).from(agentMessages).where(eq(agentMessages.role, "user")),
+    db.select({ total: count() }).from(generations).where(eq(generations.status, "completed")),
+    db.select({ total: count() }).from(musicGenerations).where(eq(musicGenerations.status, "completed")),
+  ]);
+  const usersCount = Number(userRows[0]?.total ?? 0);
+  const chatCount = Number(chatRows[0]?.total ?? 0);
+  const completedGenerations = Number(generationRows[0]?.total ?? 0);
+  const completedMusic = Number(musicRows[0]?.total ?? 0);
+  return { users: usersCount, chatRequests: chatCount, completedGenerations, completedMusic, totalRequests: chatCount + completedGenerations + completedMusic };
+}
+
 /**
  * Removes every application-owned record for a user in one transaction.
  * Storage objects become unreachable because their only account reference is removed.
