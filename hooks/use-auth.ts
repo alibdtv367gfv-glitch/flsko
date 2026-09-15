@@ -124,6 +124,8 @@ export function useAuth(options?: UseAuthOptions) {
     }
   }, [autoFetch, fetchUser]);
 
+  useEffect(() => { const unsubscribe = Auth.subscribeAuthChanges(() => { void fetchUser(); }); return () => { unsubscribe(); }; }, [fetchUser]);
+
   useEffect(() => {
     console.log("[useAuth] State updated:", {
       hasUser: !!user,

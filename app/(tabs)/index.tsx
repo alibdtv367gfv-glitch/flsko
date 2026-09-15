@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { Image, Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, Image, Pressable, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
@@ -29,15 +29,19 @@ export default function HomeScreen() {
   const colors = useColors();
   const { user, loading, isAuthenticated } = useAuth();
   const status = trpc.agent.status.useQuery();
+  const handleLogin = async () => {
+    try { await startOAuthLogin(); } catch { Alert.alert("تعذر فتح تسجيل الدخول", "تحقق من اتصال الإنترنت وحاول مرة أخرى."); }
+  };
 
   return (
     <ScreenContainer className="px-5 pt-4">
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 30 }}>
         <View className="flex-row items-center justify-between">
-          <View>
+          <View className="flex-1">
             <Text className="text-sm font-semibold text-primary">Flsko / 01</Text>
             <Text className="mt-1 text-3xl font-bold text-foreground">أهلًا بك</Text>
           </View>
+          {!loading && !isAuthenticated && <Pressable onPress={() => void handleLogin()} style={({ pressed }) => [{ backgroundColor: colors.primary }, pressed && { opacity: 0.8 }]} className="rounded-full px-4 py-3"><Text className="text-xs font-black text-background">دخول / تسجيل</Text></Pressable>}
           <Image source={require("../../assets/images/icon.png")} style={{ width: 64, height: 64 }} className="rounded-2xl" resizeMode="contain" />
         </View>
 
@@ -55,6 +59,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {isAuthenticated ? <>
         <View className="mt-7 flex-row items-end justify-between">
           <View>
             <Text className="text-xl font-bold text-foreground">ابدأ من هنا</Text>
@@ -71,6 +76,12 @@ export default function HomeScreen() {
           <ActionCard icon="◌" title="احكِ مع Flsko" subtitle="يفهم العربية واللهجات السورية" onPress={() => router.push("/chat")} />
           <ActionCard icon="⌁" title="ذاكرتي" subtitle="ما وافقتَ أن يتذكره فقط" onPress={() => router.push("/memory")} />
         </View>
+        </> : <View className="mt-7 rounded-3xl border-2 border-primary bg-surface p-5">
+          <Text className="text-xl font-black text-foreground">سجّل دخولك للبدء</Text>
+          <Text className="mt-2 text-sm leading-6 text-muted">المحادثة وإنشاء الصور والفيديو والذاكرة السحابية متاحة بعد تسجيل الدخول الآمن.</Text>
+          <Pressable onPress={() => void handleLogin()} style={({ pressed }) => [{ backgroundColor: colors.primary }, pressed && { opacity: 0.8 }]} className="mt-5 rounded-2xl px-4 py-4"><Text className="text-center text-base font-black text-background">تسجيل الدخول الآن</Text></Pressable>
+          <Text className="mt-3 text-center text-xs text-muted">سيتم فتح صفحة الدخول الرسمية ثم تعود تلقائيًا إلى Flsko.</Text>
+        </View>}
 
         <View className="mt-7 rounded-3xl border border-border bg-surface p-4">
           <View className="flex-row items-center justify-between">

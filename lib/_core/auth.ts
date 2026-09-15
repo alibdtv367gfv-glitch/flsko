@@ -12,6 +12,13 @@ export type User = {
   role?: "user" | "admin";
 };
 
+const authListeners = new Set<() => void>();
+export function subscribeAuthChanges(listener: () => void) {
+  authListeners.add(listener);
+  return () => authListeners.delete(listener);
+}
+function notifyAuthChanges() { authListeners.forEach((listener) => listener()); }
+
 export async function getSessionToken(): Promise<string | null> {
   try {
     // Web platform uses cookie-based auth, no manual token management needed
@@ -103,11 +110,13 @@ export async function setUserInfo(user: User): Promise<void> {
       // Use localStorage for web
       window.localStorage.setItem(USER_INFO_KEY, JSON.stringify(user));
       console.log("[Auth] User info stored in localStorage successfully");
+      notifyAuthChanges();
       return;
     }
 
     // Use SecureStore for native
     await SecureStore.setItemAsync(USER_INFO_KEY, JSON.stringify(user));
+    notifyAuthChanges();
     console.log("[Auth] User info stored in SecureStore successfully");
   } catch (error) {
     console.error("[Auth] Failed to set user info:", error);
@@ -119,11 +128,13 @@ export async function clearUserInfo(): Promise<void> {
     if (Platform.OS === "web") {
       // Use localStorage for web
       window.localStorage.removeItem(USER_INFO_KEY);
+      notifyAuthChanges();
       return;
     }
 
     // Use SecureStore for native
     await SecureStore.deleteItemAsync(USER_INFO_KEY);
+    notifyAuthChanges();
   } catch (error) {
     console.error("[Auth] Failed to clear user info:", error);
   }
