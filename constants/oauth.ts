@@ -79,16 +79,19 @@ export const getRedirectUri = () => {
   }
 };
 
+export const getAppReturnUri = () => {
+  if (ReactNative.Platform.OS === "web" && typeof window !== "undefined") {
+    return window.location.origin;
+  }
+  return getRedirectUri();
+};
+
 export const getLoginUrl = () => {
-  const redirectUri = getRedirectUri();
-  const state = encodeState(redirectUri);
-
-  const url = new URL(`${OAUTH_PORTAL_URL}/app-auth`);
-  url.searchParams.set("appId", APP_ID);
-  url.searchParams.set("redirectUri", redirectUri);
-  url.searchParams.set("state", state);
-  url.searchParams.set("type", "signIn");
-
+  const apiBaseUrl = getApiBaseUrl();
+  if (!apiBaseUrl) throw new Error("عنوان خادم Flsko غير مهيأ لهذا الجهاز.");
+  const url = new URL(`${apiBaseUrl}/api/google/start`);
+  url.searchParams.set("platform", ReactNative.Platform.OS === "web" ? "web" : "native");
+  url.searchParams.set("returnTo", getAppReturnUri());
   return url.toString();
 };
 
@@ -104,7 +107,6 @@ export const getLoginUrl = () => {
  */
 export async function startOAuthLogin(): Promise<string | null> {
   const loginUrl = getLoginUrl();
-  if (!OAUTH_PORTAL_URL || !APP_ID) throw new Error("إعدادات تسجيل الدخول غير مكتملة.");
 
   if (ReactNative.Platform.OS === "web") {
     // On web, just redirect
@@ -112,11 +114,6 @@ export async function startOAuthLogin(): Promise<string | null> {
       window.location.href = loginUrl;
     }
     return null;
-  }
-
-  const supported = await Linking.canOpenURL(loginUrl);
-  if (!supported) {
-    throw new Error("تعذر فتح صفحة تسجيل الدخول على هذا الجهاز.");
   }
 
   try {

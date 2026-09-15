@@ -38,11 +38,14 @@ export default function OAuthCallback() {
           // Decode and store user info if available
           if (params.user) {
             try {
-              // Use atob for base64 decoding (works in both web and React Native)
+              // Decode base64url safely (Google callback values may contain '-' and '_').
+              const normalized = params.user.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(params.user.length / 4) * 4, "=");
               const userJson =
                 typeof atob !== "undefined"
-                  ? atob(params.user)
-                  : Buffer.from(params.user, "base64").toString("utf-8");
+                  ? decodeURIComponent(
+                      Array.from(atob(normalized), (char) => `%${char.charCodeAt(0).toString(16).padStart(2, "0")}`).join(""),
+                    )
+                  : Buffer.from(normalized, "base64").toString("utf-8");
               const userData = JSON.parse(userJson);
               const userInfo: Auth.User = {
                 id: userData.id,
@@ -50,6 +53,7 @@ export default function OAuthCallback() {
                 name: userData.name,
                 email: userData.email,
                 loginMethod: userData.loginMethod,
+                role: userData.role === "admin" ? "admin" : "user",
                 lastSignedIn: new Date(userData.lastSignedIn || Date.now()),
               };
               await Auth.setUserInfo(userInfo);
@@ -96,7 +100,7 @@ export default function OAuthCallback() {
         if (error) {
           console.error("[OAuth] Error parameter found:", error);
           setStatus("error");
-          setErrorMessage(error || "OAuth error occurred");
+          setErrorMessage(error === "google_login_failed" ? "تعذر تسجيل الدخول عبر Google. تحقق من إعدادات الحساب وحاول مرة أخرى." : "تم إلغاء تسجيل الدخول أو رفضه. يمكنك المحاولة مرة أخرى.");
           return;
         }
 
