@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { router } from "expo-router";
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import * as Speech from "expo-speech";
+import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
+import * as FileSystem from "expo-file-system/legacy";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { AgentProcessing } from "@/components/agent-processing";
@@ -33,6 +35,8 @@ export default function ChatScreen() {
   const [lastPrompt, setLastPrompt] = useState("");
   const [lastSourceId, setLastSourceId] = useState<string | undefined>();
   const [selectedFileIds, setSelectedFileIds] = useState<number[]>([]);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(recorder);
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: "welcome", role: "assistant", content: "أنا فلسقوا. احكِ لي ما تريد، وبإمكاني مساعدتك في الفكرة أو النص أو الصورة أو الفيديو." },
   ]);
@@ -50,6 +54,12 @@ export default function ChatScreen() {
     setMessages((current) => current.length === 1 && current[0].id === "welcome" ? [{ ...current[0], content: greeting }] : current);
   }, [profile.data?.gender]);
 
+  useEffect(() => {
+    void requestRecordingPermissionsAsync();
+    void setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
+    return () => { void recorder.stop(); };
+  }, [recorder]);
+
   const mutation = trpc.agent.chat.useMutation({
     onSuccess: (data, variables) => {
       const assistant: ChatMessage = { id: `${Date.now()}-assistant`, role: "assistant", content: data.text, sourceId: data.sourceId };
@@ -61,11 +71,36 @@ export default function ChatScreen() {
     onError: (error) => Alert.alert("تعذر الرد", error.message || "حاول مرة أخرى."),
   });
   const reportMutation = trpc.safety.report.useMutation();
+  const transcribeMutation = trpc.voice.transcribe.useMutation({
+    onSuccess: (data) => setDraft((current) => current ? `${current} ${data.text}` : data.text),
+    onError: (error) => Alert.alert("تعذر فهم التسجيل", error.message || "حاول تسجيل مقطع أقصر."),
+  });
 
   const readAloud = (text: string) => {
     const selected = voices.find((voice) => voiceMatches(voice, voiceGender)) || voices[0];
     void Speech.stop();
     Speech.speak(text, { language: "ar-SA", voice: selected?.identifier, rate: 0.92, pitch: voiceGender === "female" ? 1.05 : 0.9 });
+  };
+
+  const toggleRecording = async () => {
+    if (!isAuthenticated) {
+      Alert.alert("تسجيل الدخول مطلوب", "سجّل الدخول لاستخدام المحادثة الصوتية وحفظها بأمان.", [{ text: "لاحقًا", style: "cancel" }, { text: "تسجيل الدخول", onPress: () => void startOAuthLogin() }]);
+      return;
+    }
+    if (recorderState.isRecording) {
+      await recorder.stop();
+      if (!recorder.uri) return;
+      const base64 = await FileSystem.readAsStringAsync(recorder.uri, { encoding: FileSystem.EncodingType.Base64 });
+      transcribeMutation.mutate({ dataUri: `data:audio/m4a;base64,${base64}`, language: "ar" });
+      return;
+    }
+    const permission = await requestRecordingPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("إذن الميكروفون مطلوب", "اسمح بالوصول إلى الميكروفون من إعدادات الجهاز لتسجيل رسالتك.");
+      return;
+    }
+    await recorder.prepareToRecordAsync();
+    recorder.record();
   };
 
   const reportMessage = (messageId: string) => {
@@ -134,6 +169,7 @@ export default function ChatScreen() {
         <View className="mb-2 flex-row items-end gap-2 rounded-3xl border border-border bg-surface p-2">
           <Pressable onPress={() => router.push("/(tabs)/library")} style={({ pressed }) => [pressed && { opacity: 0.7 }]} className="h-12 w-12 items-center justify-center rounded-2xl border border-border"><Text className="text-xl text-primary">＋</Text></Pressable>
           <TextInput value={draft} onChangeText={setDraft} multiline textAlign="right" placeholder="اكتب رسالتك..." placeholderTextColor={colors.muted} className="max-h-28 min-h-[48px] flex-1 px-3 py-3 text-base text-foreground" />
+          <Pressable onPress={() => void toggleRecording()} disabled={transcribeMutation.isPending} style={({ pressed }) => [{ backgroundColor: recorderState.isRecording ? colors.error : colors.background }, pressed && { opacity: 0.75 }]} className="h-12 min-w-[52px] items-center justify-center rounded-2xl border border-border"><Text className="text-xs font-bold" style={{ color: recorderState.isRecording ? colors.background : colors.primary }}>{transcribeMutation.isPending ? "يفهم" : recorderState.isRecording ? "إيقاف" : "تسجيل"}</Text></Pressable>
           <Pressable onPress={send} style={({ pressed }) => [pressed && { opacity: 0.75 }]} className="h-12 w-12 items-center justify-center rounded-2xl bg-primary"><Text className="text-xl font-black text-background">↑</Text></Pressable>
         </View>
       </KeyboardAvoidingView>

@@ -7,6 +7,7 @@ import { answerAsFlsko, createFlskoImage, createFlskoVideo, createFlskoMusic, ge
 import { storagePut } from "./storage";
 import { assertRateLimit } from "./rate-limit";
 import { deliverSuggestionEmail } from "./suggestions";
+import { transcribeAudio } from "./_core/voiceTranscription";
 
 export const appRouter = router({
   system: router({
@@ -86,6 +87,19 @@ export const appRouter = router({
           await db.updateMusicGeneration(id, ctx.user.id, { status: "failed", errorMessage: message });
           throw error;
         }
+      }),
+  }),
+  voice: router({
+    transcribe: protectedProcedure
+      .input(z.object({ dataUri: z.string().regex(/^data:audio\/[a-z0-9.+-]+;base64,/i).max(22000000), language: z.string().trim().max(12).default("ar") }))
+      .mutation(async ({ ctx, input }) => {
+        assertRateLimit(ctx.user.id, "voice-transcribe", 12);
+        const match = input.dataUri.match(/^data:(audio\/[^;]+);base64,(.+)$/i);
+        if (!match) throw new Error("صيغة التسجيل غير مدعومة");
+        const stored = await storagePut(`transient-audio/${ctx.user.id}/${Date.now()}.m4a`, Buffer.from(match[2], "base64"), match[1]);
+        const result = await transcribeAudio({ audioUrl: stored.url, language: input.language, prompt: "حوّل كلام المستخدم العربي واللهجة السورية إلى نص عربي واضح دون ترجمة." });
+        if ("error" in result) throw new Error(result.error);
+        return { text: result.text, language: result.language };
       }),
   }),
 

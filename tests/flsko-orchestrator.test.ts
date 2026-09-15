@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getFlskoProviderStatus } from "../server/flsko-ai";
+import { buildProfileContext, getFlskoProviderStatus } from "../server/flsko-ai";
 import { buildSyrianContext, detectInteractionMode } from "../server/syrian-knowledge";
 import { assertRateLimit } from "../server/rate-limit";
 
@@ -15,6 +15,9 @@ describe("فلسقوا orchestrator", () => {
     expect(detectInteractionMode("هههه احكيلي نكتة")).toBe("playful");
     expect(detectInteractionMode("كيف أصلح المشكلة بخطوات دقيقة؟")).toBe("practical");
     expect(buildSyrianContext("شو الأخبار؟")).toContain("المحافظات");
+    expect(buildSyrianContext("شو الأخبار؟")).toContain("الحسكة");
+    expect(buildProfileContext({ displayName: "ليان", governorate: "اللاذقية", about: "أفضل الإجابات المختصرة" })).toContain("اللاذقية");
+    expect(buildProfileContext({ displayName: "ليان", governorate: "اللاذقية", about: "أفضل الإجابات المختصرة" })).toContain("أفضل الإجابات المختصرة");
   });
 
   it("limits repeated requests per authenticated user", () => {
