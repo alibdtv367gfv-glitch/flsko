@@ -97,6 +97,15 @@ export const musicGenerations = mysqlTable("music_generations", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+export const suggestions = mysqlTable("suggestions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  category: varchar("category", { length: 64 }).default("general").notNull(),
+  content: text("content").notNull(),
+  emailStatus: mysqlEnum("emailStatus", ["pending", "sent", "not_configured", "failed"]).default("pending").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type UserProfile = typeof userProfiles.$inferSelect;
@@ -115,3 +124,5 @@ export type UserFile = typeof userFiles.$inferSelect;
 export type InsertUserFile = typeof userFiles.$inferInsert;
 export type MusicGeneration = typeof musicGenerations.$inferSelect;
 export type InsertMusicGeneration = typeof musicGenerations.$inferInsert;
+export type Suggestion = typeof suggestions.$inferSelect;
+export type InsertSuggestion = typeof suggestions.$inferInsert;

@@ -5,6 +5,8 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
 import { answerAsFlsko, createFlskoImage, createFlskoVideo, createFlskoMusic, getFlskoProviderStatus } from "./flsko-ai";
 import { storagePut } from "./storage";
+import { assertRateLimit } from "./rate-limit";
+import { deliverSuggestionEmail } from "./suggestions";
 
 export const appRouter = router({
   system: router({
@@ -19,6 +21,7 @@ export const appRouter = router({
     }),
   }),
   account: router({
+    cleanup: protectedProcedure.mutation(({ ctx }) => db.cleanupStaleTransientData(ctx.user.id)),
     delete: protectedProcedure.mutation(async ({ ctx }) => {
       const result = await db.deleteUserAccount(ctx.user.id);
       const cookieOptions = getSessionCookieOptions(ctx.req);
@@ -32,6 +35,8 @@ export const appRouter = router({
     chat: protectedProcedure
       .input(z.object({ message: z.string().trim().min(1).max(6000), excludeSource: z.string().max(64).optional(), attachmentIds: z.array(z.number().int().positive()).max(4).optional() }))
       .mutation(async ({ ctx, input }) => {
+        assertRateLimit(ctx.user.id, "chat", 30);
+        await db.cleanupStaleTransientData(ctx.user.id);
         const memories = await db.listMemories(ctx.user.id);
         const recentConversation = await db.getRecentAgentMessages(ctx.user.id, 8);
         const profile = await db.getUserProfile(ctx.user.id);
@@ -46,6 +51,7 @@ export const appRouter = router({
     generate: protectedProcedure
       .input(z.object({ kind: z.enum(["image", "video"]), prompt: z.string().trim().min(3).max(4000) }))
       .mutation(async ({ ctx, input }) => {
+        assertRateLimit(ctx.user.id, `generate-${input.kind}`, 6);
         const generationId = await db.createGeneration({ userId: ctx.user.id, kind: input.kind, prompt: input.prompt, status: "queued" });
         try {
           if (input.kind === "image") {
@@ -69,6 +75,7 @@ export const appRouter = router({
     music: protectedProcedure
       .input(z.object({ prompt: z.string().trim().min(3).max(4000) }))
       .mutation(async ({ ctx, input }) => {
+        assertRateLimit(ctx.user.id, "music", 4);
         const id = await db.createMusicGeneration({ userId: ctx.user.id, prompt: input.prompt, status: "queued" });
         try {
           const result = await createFlskoMusic(input.prompt);
@@ -107,9 +114,11 @@ export const appRouter = router({
 
   files: router({
     list: protectedProcedure.query(({ ctx }) => db.listUserFiles(ctx.user.id)),
+    delete: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ ctx, input }) => db.deleteUserFile(ctx.user.id, input.id)),
     upload: protectedProcedure
       .input(z.object({ name: z.string().trim().min(1).max(255), mimeType: z.string().trim().min(1).max(160), dataUri: z.string().regex(/^data:[^;]+;base64,/).max(15000000) }))
       .mutation(async ({ ctx, input }) => {
+        assertRateLimit(ctx.user.id, "upload", 12);
         const match = input.dataUri.match(/^data:([^;]+);base64,(.+)$/);
         if (!match) throw new Error("صيغة الملف غير مدعومة");
         const kind = match[1].startsWith("image/") ? "image" : match[1].startsWith("video/") ? "video" : match[1].startsWith("audio/") ? "audio" : ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"].includes(match[1]) ? "document" : "other";
@@ -131,6 +140,23 @@ export const appRouter = router({
     report: protectedProcedure
       .input(z.object({ targetType: z.enum(["chat", "image", "video"]), targetId: z.string().max(128).optional(), reason: z.string().trim().min(3).max(1000) }))
       .mutation(({ ctx, input }) => db.createContentReport({ userId: ctx.user.id, ...input })),
+  }),
+  suggestions: router({
+    submit: protectedProcedure
+      .input(z.object({ category: z.string().trim().min(1).max(64), content: z.string().trim().min(10).max(4000) }))
+      .mutation(async ({ ctx, input }) => {
+        assertRateLimit(ctx.user.id, "suggestions", 3);
+        const id = await db.createSuggestion({ userId: ctx.user.id, category: input.category, content: input.content, emailStatus: "pending" });
+        try {
+          const emailStatus = await deliverSuggestionEmail({ ...input, userId: ctx.user.id });
+          await db.updateSuggestionStatus(id, ctx.user.id, emailStatus);
+          return { accepted: true as const, delivered: emailStatus === "sent" };
+        } catch (error) {
+          await db.updateSuggestionStatus(id, ctx.user.id, "failed");
+          console.error("[Suggestions] delivery failed", error);
+          return { accepted: true as const, delivered: false };
+        }
+      }),
   }),
 });
 

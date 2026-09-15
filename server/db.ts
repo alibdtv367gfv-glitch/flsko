@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, lt, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   agentMessages,
@@ -16,6 +16,7 @@ import {
   InsertUserProfile,
   userFiles,
   musicGenerations,
+  suggestions,
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -74,6 +75,27 @@ export async function listUserFiles(userId: number) {
   return db.select().from(userFiles).where(eq(userFiles.userId, userId)).orderBy(desc(userFiles.createdAt));
 }
 
+export async function deleteUserFile(userId: number, fileId: number) {
+  const db = await getDb(); if (!db) throw new Error("Database not available");
+  await db.delete(userFiles).where(and(eq(userFiles.id, fileId), eq(userFiles.userId, userId)));
+  return { deleted: true as const };
+}
+
+/**
+ * Conservative retention cleanup. It removes only failed or abandoned jobs;
+ * user files, memories, successful generations, and conversations are never
+ * deleted automatically because importance cannot be inferred safely.
+ */
+export async function cleanupStaleTransientData(userId: number, now = new Date()) {
+  const db = await getDb(); if (!db) return { cleaned: false as const };
+  const cutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+  await db.transaction(async (tx) => {
+    await tx.delete(generations).where(and(eq(generations.userId, userId), lt(generations.createdAt, cutoff), or(eq(generations.status, "failed"), eq(generations.status, "queued"))));
+    await tx.delete(musicGenerations).where(and(eq(musicGenerations.userId, userId), lt(musicGenerations.createdAt, cutoff), or(eq(musicGenerations.status, "failed"), eq(musicGenerations.status, "queued"))));
+  });
+  return { cleaned: true as const };
+}
+
 export async function createMusicGeneration(data: typeof musicGenerations.$inferInsert) {
   const db = await getDb(); if (!db) throw new Error("Database not available");
   const result = await db.insert(musicGenerations).values(data);
@@ -96,6 +118,8 @@ export async function updateGeneration(id: number, userId: number, data: Partial
 export async function createKnowledgeSource(data: InsertKnowledgeSource) { const db = await getDb(); if (!db) throw new Error("Database not available"); return getInsertId(await db.insert(knowledgeSources).values(data)); }
 export async function listKnowledgeSources(userId: number) { const db = await getDb(); if (!db) return []; return db.select().from(knowledgeSources).where(eq(knowledgeSources.userId, userId)).orderBy(desc(knowledgeSources.createdAt)); }
 export async function createContentReport(data: InsertContentReport) { const db = await getDb(); if (!db) throw new Error("Database not available"); return getInsertId(await db.insert(contentReports).values(data)); }
+export async function createSuggestion(data: typeof suggestions.$inferInsert) { const db = await getDb(); if (!db) throw new Error("Database not available"); return getInsertId(await db.insert(suggestions).values(data)); }
+export async function updateSuggestionStatus(id: number, userId: number, emailStatus: typeof suggestions.$inferInsert.emailStatus) { const db = await getDb(); if (!db) return; await db.update(suggestions).set({ emailStatus }).where(and(eq(suggestions.id, id), eq(suggestions.userId, userId))); }
 
 /**
  * Removes every application-owned record for a user in one transaction.
@@ -105,6 +129,7 @@ export async function deleteUserAccount(userId: number) {
   const db = await getDb(); if (!db) throw new Error("Database not available");
   await db.transaction(async (tx) => {
     await tx.delete(contentReports).where(eq(contentReports.userId, userId));
+    await tx.delete(suggestions).where(eq(suggestions.userId, userId));
     await tx.delete(knowledgeSources).where(eq(knowledgeSources.userId, userId));
     await tx.delete(musicGenerations).where(eq(musicGenerations.userId, userId));
     await tx.delete(generations).where(eq(generations.userId, userId));

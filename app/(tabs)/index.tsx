@@ -102,6 +102,11 @@ export default function HomeScreen() {
             </Pressable>
           </View>
         </View>
+        <Pressable onPress={() => router.push("/suggestions")} style={({ pressed }) => [pressed && { opacity: 0.75 }]} className="mt-5 rounded-2xl border border-primary bg-surface px-4 py-4">
+          <Text className="text-sm font-black text-primary">أضف اقتراحًا لتطوير Flsko</Text>
+          <Text className="mt-1 text-xs leading-5 text-muted">شارك فكرة مستقبلية — تصل للفريق من خلال الخادم دون كشف بريد المالك.</Text>
+        </Pressable>
+        <Text className="mt-4 text-center text-[11px] text-muted">© 2026 علي يوسف · Flsko</Text>
       </ScrollView>
     </ScreenContainer>
   );

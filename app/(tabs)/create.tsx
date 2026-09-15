@@ -64,10 +64,9 @@ export default function CreateScreen() {
                 key={item}
                 onPress={() => { setKind(item); setResult(null); }}
                 style={({ pressed }) => [
-                  { backgroundColor: active ? colors.primary : "transparent" },
+                  { flex: 1, alignItems: "center", borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: active ? colors.primary : "transparent" },
                   pressed && { opacity: 0.8 },
                 ]}
-                className="flex-1 items-center rounded-xl px-4 py-3"
               >
                 <Text className="font-bold" style={{ color: active ? colors.background : colors.muted }}>{item === "image" ? "صورة" : item === "video" ? "فيديو" : "موسيقى"}</Text>
               </Pressable>
@@ -105,8 +104,8 @@ export default function CreateScreen() {
             {result.url && kind === "music" ? <InlineAudioPlayer source={result.url} /> : null}
             <Text className="mt-3 text-sm leading-6 text-muted">{result.message || (result.url ? "تم حفظ النتيجة في التخزين السحابي." : "تم إنشاء المهمة السحابية.")}</Text>
             {result.url && <Pressable onPress={() => reportMutation.mutate({ targetType: kind === "music" ? "image" : kind, targetId: String(result.url), reason: "أبلغ المستخدم عن محتوى مولد يحتاج إلى مراجعة السلامة" })} disabled={reportMutation.isPending} className="mt-3 self-start"><Text className="text-xs font-semibold text-muted">إبلاغ عن هذه النتيجة</Text></Pressable>}
-            {!result.url && kind === "video" && <Text className="mt-2 text-xs leading-5 text-warning">لإنتاج فيديو مفتوح المصدر، اربط خادم Wan 2.2 أو LTX عبر FLSKO_VIDEO_PROVIDER_URL في بيئة الخادم.</Text>}
-            {!result.url && kind === "music" && <Text className="mt-2 text-xs leading-5 text-warning">اربط مزود موسيقى مفتوحًا عبر FLSKO_MUSIC_PROVIDER_URL أو موصل موسيقى Gemini على الخادم.</Text>}
+            {!result.url && kind === "video" && <Text className="mt-2 text-xs leading-5 text-warning">النتيجة قيد الانتظار لأن خدمة الوسائط السحابية غير متاحة حاليًا. سيعيد الوكيل المحاولة عند تفعيلها.</Text>}
+            {!result.url && kind === "music" && <Text className="mt-2 text-xs leading-5 text-warning">النتيجة قيد الانتظار لأن خدمة الصوت السحابية غير متاحة حاليًا. لم يتم إنشاء ملف وهمي.</Text>}
           </View>
         )}
 

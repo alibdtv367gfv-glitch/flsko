@@ -10,10 +10,12 @@
 
 ## قنوات المصادر المفتوحة
 
-- [Pollinations API الرسمي](https://gen.pollinations.ai/docs): واجهة موحدة للنص والصورة والصوت والفيديو؛ وثائقها الحالية تشترط مفتاحًا للتوليد، لذلك لا يُوضع المفتاح داخل تطبيق الهاتف. أضيف دعمها في المنسق عبر `FLSKO_POLLINATIONS_API_KEY`، وتُستخدم للصورة والنص عند تفعيلها.
-- [MusicGen Space الرسمي](https://huggingface.co/spaces/facebook/MusicGen): مساحة عامة لتجربة MusicGen، ويمكن توصيلها عبر محول خادمي متوافق مع عقد الموسيقى في Flsko.
-- [AnimateDiff في Diffusers](https://huggingface.co/docs/diffusers/en/api/pipelines/animatediff): مسار مفتوح لتحريك الصور، ويمكن توصيله عبر `FLSKO_VIDEO_PROVIDER_URL`.
-- [CogVideoX على Hugging Face](https://huggingface.co/THUDM/CogVideoX-5b): مسار مفتوح للفيديو القصير، ويُوصل عبر نفس عقد الفيديو دون كشف النموذج للمستخدم.
+- [Pollinations API الرسمي](https://gen.pollinations.ai/docs): واجهة للنص والصورة مع اشتراطات مصادقة تتغير حسب المنتج؛ لا يُوضع المفتاح داخل تطبيق الهاتف. أضيف دعمها في المنسق عبر `FLSKO_POLLINATIONS_API_KEY`، وتُستخدم فقط عند نجاح فحص الاستجابة.
+- [Wan 2.2 الرسمي](https://github.com/Wan-Video/Wan2.2): أوزان Apache-2.0، لكن التشغيل الذاتي يحتاج GPU كبيرًا؛ واجهة Model Studio الرسمية مناسبة للخادم وتعيد مهمة غير متزامنة، ويجب تنزيل الفيديو إلى تخزين Flsko لأن رابط الخدمة مؤقت.
+- [LTX-Video الرسمي](https://github.com/Lightricks/LTX-Video) و[API الرسمي](https://docs.ltx.io/api-documentation/api-reference/async-video-generation/submit-text-to-video): خيار فيديو مُدار غير متزامن خلف خادم Node. أوزان الإصدارات الحديثة لها ترخيص Open Weights منفصل عن ترخيص الكود، لذا يجب فحص العتبة التجارية قبل الاستخدام.
+- [ACE-Step 1.5 الرسمي](https://github.com/ace-step/ACE-Step-1.5): نموذج موسيقى MIT مع API رسمي محلي (`/release_task` و`/query_result`) ويحتاج GPU وخادمًا داخليًا محميًا؛ لا نعرض API النموذج مباشرة للهاتف.
+- [MusicGen الرسمي من Meta](https://github.com/facebookresearch/audiocraft/blob/main/docs/MUSICGEN.md): متاح داخل AudioCraft، لكن الأوزان المنشورة CC-BY-NC 4.0؛ لذلك لا نعتمد عليه للإطلاق التجاري دون ترخيص مستقل.
+- [CogVideoX الرسمي](https://github.com/zai-org/CogVideo): لا يوجد endpoint REST عام موثق في المصدر الرسمي المفحوص؛ التشغيل الذاتي يحتاج عامل GPU، وترخيص الأوزان يفرض قيودًا تجارية، لذلك لا يُفعل تلقائيًا.
 
 لا تعتبر Flsko هذه الخدمات مضمونة أو مجانية بلا حدود؛ حالة كل خدمة ومفتاحها تُفحص على الخادم، وعند تعذرها ينتقل المنسق إلى مرشح آخر أو يعرض حالة انتظار صريحة بدل إنتاج نتيجة وهمية.
 
