@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, Linking, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
@@ -16,7 +16,9 @@ export default function DevelopmentPortalScreen() {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const unlock = trpc.development.unlock.useMutation({ onSuccess: () => setUnlocked(true), onError: (error) => Alert.alert("تعذر فتح البوابة", error.message) });
   const stats = trpc.development.stats.useQuery(undefined, { enabled: unlocked });
+  const dailyStats = trpc.development.dailyStats.useQuery(undefined, { enabled: unlocked });
   const files = trpc.development.files.useQuery(undefined, { enabled: unlocked });
+  const archive = trpc.development.archive.useMutation({ onSuccess: (data) => void Linking.openURL(data.url), onError: (error) => Alert.alert("تعذر إنشاء الحزمة", error.message) });
   const file = trpc.development.file.useQuery({ relativePath: selectedFile || "README.md" }, { enabled: unlocked && Boolean(selectedFile) });
   const isOwner = isAuthenticated && user?.role === "admin";
   const summary = useMemo(() => stats.data ? [
@@ -50,6 +52,8 @@ export default function DevelopmentPortalScreen() {
         <Text className="mt-2 text-3xl font-black text-foreground">لوحة المشروع</Text>
         <Text className="mt-2 leading-6 text-muted">إحصاءات تشغيلية وملفات المصدر، مع إمكانية توسيع اللوحة لاحقًا إلى إصدارات ونشر ومراقبة.</Text>
         <View className="mt-5 flex-row flex-wrap gap-3">{summary.map(([label, value]) => <View key={String(label)} className="min-w-[45%] flex-1 rounded-2xl border border-border bg-surface p-4"><Text className="text-xs font-bold text-muted">{label}</Text><Text className="mt-2 text-2xl font-black text-primary">{value}</Text></View>)}</View>
+        <View className="mt-5 rounded-3xl border border-border bg-surface p-4"><Text className="text-lg font-black text-foreground">نشاط آخر 7 أيام</Text>{dailyStats.data?.length ? <View className="mt-4 flex-row items-end gap-2" style={{ height: 130 }}>{dailyStats.data.map((item) => { const max = Math.max(...(dailyStats.data || []).map((entry) => entry.total), 1); return <View key={item.day} className="flex-1 items-center justify-end"><View className="w-full rounded-t-xl bg-primary" style={{ height: Math.max(8, (item.total / max) * 95) }} /><Text className="mt-2 text-[9px] text-muted">{item.day.slice(5)}</Text></View>; })}</View> : <Text className="mt-3 text-xs text-muted">لا توجد بيانات نشاط كافية بعد.</Text>}</View>
+        <Pressable onPress={() => archive.mutate()} disabled={archive.isPending} style={({ pressed }) => [{ backgroundColor: colors.primary }, pressed && { opacity: 0.8 }]} className="mt-5 rounded-2xl px-4 py-4"><Text className="text-center font-black text-background">{archive.isPending ? "جارٍ تجهيز الحزمة..." : "تنزيل ملفات المشروع كاملة"}</Text></Pressable>
         <View className="mt-6 rounded-3xl border border-border bg-surface p-4"><Text className="text-lg font-black text-foreground">ملفات التطبيق</Text><Text className="mt-2 text-xs leading-5 text-muted">الفهرس يستبعد الأسرار والمجلدات التشغيلية. اختر ملفًا لعرضه، ويمكن تطويره لاحقًا إلى حزمة تنزيل كاملة.</Text>{files.data?.files.map((name) => <Pressable key={name} onPress={() => setSelectedFile(name)} className="mt-2 rounded-xl bg-background px-3 py-3"><Text className="text-xs text-primary">{name}</Text></Pressable>)}</View>
         {selectedFile && <View className="mt-5 rounded-3xl border border-border bg-background p-4"><Text className="font-bold text-foreground">{selectedFile}</Text><Text selectable className="mt-3 text-xs leading-5 text-muted">{file.isLoading ? "جارٍ تحميل الملف..." : file.data?.content || "تعذر قراءة الملف."}</Text></View>}
       </ScrollView>

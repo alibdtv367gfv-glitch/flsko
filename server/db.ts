@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, lt, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   agentMessages,
@@ -154,6 +154,20 @@ export async function getAdminStats() {
   const completedGenerations = Number(generationRows[0]?.total ?? 0);
   const completedMusic = Number(musicRows[0]?.total ?? 0);
   return { users: usersCount, chatRequests: chatCount, completedGenerations, completedMusic, totalRequests: chatCount + completedGenerations + completedMusic };
+}
+
+export async function getAdminDailyStats(days = 7) {
+  const db = await getDb();
+  if (!db) return [];
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const [chats, generationsDaily, musicDaily] = await Promise.all([
+    db.select({ day: sql<string>`DATE(${agentMessages.createdAt})`, total: count() }).from(agentMessages).where(and(eq(agentMessages.role, "user"), gte(agentMessages.createdAt, since))).groupBy(sql`DATE(${agentMessages.createdAt})`),
+    db.select({ day: sql<string>`DATE(${generations.createdAt})`, total: count() }).from(generations).where(and(eq(generations.status, "completed"), gte(generations.createdAt, since))).groupBy(sql`DATE(${generations.createdAt})`),
+    db.select({ day: sql<string>`DATE(${musicGenerations.createdAt})`, total: count() }).from(musicGenerations).where(and(eq(musicGenerations.status, "completed"), gte(musicGenerations.createdAt, since))).groupBy(sql`DATE(${musicGenerations.createdAt})`),
+  ]);
+  const totals = new Map<string, number>();
+  for (const row of [...chats, ...generationsDaily, ...musicDaily]) totals.set(String(row.day), (totals.get(String(row.day)) || 0) + Number(row.total));
+  return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([day, total]) => ({ day, total }));
 }
 
 /**

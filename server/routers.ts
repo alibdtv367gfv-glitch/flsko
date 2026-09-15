@@ -11,11 +11,14 @@ import { transcribeAudio } from "./_core/voiceTranscription";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 const projectRoot = process.cwd();
 const protectedProjectFiles = new Set([".env", ".env.local", ".env.production"]);
 const ignoredProjectDirs = new Set(["node_modules", ".git", ".expo", "dist"]);
 const developmentCookieName = "flsko-dev-unlocked";
+const execFileAsync = promisify(execFile);
 
 function developmentToken(userId: number, issuedAt: number) {
   const payload = `${userId}.${issuedAt}`;
@@ -234,6 +237,16 @@ export const appRouter = router({
         return { unlocked: true as const };
       }),
     stats: adminProcedure.query(({ ctx }) => { requireDevelopmentSession(ctx); return db.getAdminStats(); }),
+    dailyStats: adminProcedure.query(({ ctx }) => { requireDevelopmentSession(ctx); return db.getAdminDailyStats(7); }),
+    archive: adminProcedure.mutation(async ({ ctx }) => {
+      requireDevelopmentSession(ctx);
+      const archivePath = `/tmp/flsko-development-${ctx.user.id}.zip`;
+      await execFileAsync("zip", ["-r", "-q", archivePath, ".", "-x", "node_modules/*", ".git/*", ".expo/*", "dist/*", ".env", ".env.*"], { cwd: projectRoot, maxBuffer: 1024 * 1024 });
+      const archive = await fs.readFile(archivePath);
+      const stored = await storagePut(`development/${ctx.user.id}/flsko-project.zip`, archive, "application/zip");
+      await fs.rm(archivePath, { force: true });
+      return { url: stored.url };
+    }),
     files: adminProcedure.query(async ({ ctx }) => { requireDevelopmentSession(ctx); return { files: await listProjectFiles() }; }),
     file: adminProcedure
       .input(z.object({ relativePath: z.string().min(1).max(240) }))
