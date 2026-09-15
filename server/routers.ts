@@ -18,6 +18,14 @@ export const appRouter = router({
       return { success: true } as const;
     }),
   }),
+  account: router({
+    delete: protectedProcedure.mutation(async ({ ctx }) => {
+      const result = await db.deleteUserAccount(ctx.user.id);
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      return result;
+    }),
+  }),
   agent: router({
     status: publicProcedure.query(() => getFlskoProviderStatus()),
 

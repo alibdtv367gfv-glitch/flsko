@@ -38,12 +38,12 @@ export default function HomeScreen() {
             <Text className="text-sm font-semibold text-primary">Flsko / 01</Text>
             <Text className="mt-1 text-3xl font-bold text-foreground">أهلًا بك</Text>
           </View>
-          <Image source={require("../../assets/images/icon.png")} className="h-12 w-12 rounded-2xl" resizeMode="contain" />
+          <Image source={require("../../assets/images/icon.png")} style={{ width: 64, height: 64 }} className="rounded-2xl" resizeMode="contain" />
         </View>
 
         <View className="mt-6 rounded-[28px] bg-primary p-5">
           <Text className="text-sm font-semibold text-background/80">الوكيل السوري الذكي</Text>
-          <Text className="mt-2 text-3xl font-black leading-10 text-background">افهم فكرتك،{`\n`}واصنعها بصوتك.</Text>
+          <Text className="mt-2 text-3xl font-black leading-10 text-background">فكرتك،{`\n`}بنسخة أذكى.</Text>
           <Text className="mt-3 text-sm leading-6 text-background/80">
             محادثة، صور وفيديو في مساحة سحابية واحدة، مع ذاكرة لا تعمل إلا بإذنك.
           </Text>
@@ -65,7 +65,7 @@ export default function HomeScreen() {
 
         <View className="mt-4 flex-row gap-3">
           <ActionCard icon="✦" title="صورة" subtitle="حوّل الوصف إلى صورة احترافية" onPress={() => router.push("/create")} />
-          <ActionCard icon="◉" title="فيديو" subtitle="جهّز مشهدًا لـ Wan أو LTX" onPress={() => router.push("/create?kind=video")} />
+          <ActionCard icon="◉" title="فيديو" subtitle="حوّل فكرتك إلى مشهد قصير" onPress={() => router.push("/create?kind=video")} />
         </View>
         <View className="mt-3 flex-row gap-3">
           <ActionCard icon="◌" title="احكِ مع Flsko" subtitle="يفهم العربية واللهجات السورية" onPress={() => router.push("/chat")} />

@@ -96,3 +96,23 @@ export async function updateGeneration(id: number, userId: number, data: Partial
 export async function createKnowledgeSource(data: InsertKnowledgeSource) { const db = await getDb(); if (!db) throw new Error("Database not available"); return getInsertId(await db.insert(knowledgeSources).values(data)); }
 export async function listKnowledgeSources(userId: number) { const db = await getDb(); if (!db) return []; return db.select().from(knowledgeSources).where(eq(knowledgeSources.userId, userId)).orderBy(desc(knowledgeSources.createdAt)); }
 export async function createContentReport(data: InsertContentReport) { const db = await getDb(); if (!db) throw new Error("Database not available"); return getInsertId(await db.insert(contentReports).values(data)); }
+
+/**
+ * Removes every application-owned record for a user in one transaction.
+ * Storage objects become unreachable because their only account reference is removed.
+ */
+export async function deleteUserAccount(userId: number) {
+  const db = await getDb(); if (!db) throw new Error("Database not available");
+  await db.transaction(async (tx) => {
+    await tx.delete(contentReports).where(eq(contentReports.userId, userId));
+    await tx.delete(knowledgeSources).where(eq(knowledgeSources.userId, userId));
+    await tx.delete(musicGenerations).where(eq(musicGenerations.userId, userId));
+    await tx.delete(generations).where(eq(generations.userId, userId));
+    await tx.delete(userFiles).where(eq(userFiles.userId, userId));
+    await tx.delete(agentMessages).where(eq(agentMessages.userId, userId));
+    await tx.delete(memories).where(eq(memories.userId, userId));
+    await tx.delete(userProfiles).where(eq(userProfiles.userId, userId));
+    await tx.delete(users).where(eq(users.id, userId));
+  });
+  return { deleted: true as const };
+}

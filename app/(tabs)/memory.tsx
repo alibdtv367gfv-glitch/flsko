@@ -15,7 +15,7 @@ type Gender = "male" | "female" | "unspecified";
 
 export default function MemoryScreen() {
   const colors = useColors();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, logout } = useAuth();
   const [memory, setMemory] = useState("");
   const [source, setSource] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -32,6 +32,7 @@ export default function MemoryScreen() {
   const submitSource = trpc.knowledge.submitPublicSource.useMutation({ onSuccess: () => { setSource(""); void sources.refetch(); }, onError: (error) => Alert.alert("الرابط غير صالح", error.message) });
   const saveProfile = trpc.profile.save.useMutation({ onSuccess: (saved) => { if (saved) setAvatarUrl(saved.avatarUrl || undefined); void profile.refetch(); Alert.alert("تم الحفظ", "سيستخدم فلسقوا هذه المعلومات لفهمك بشكل أفضل."); }, onError: (error) => Alert.alert("لم يُحفظ الملف", error.message) });
   const uploadAvatar = trpc.profile.uploadAvatar.useMutation({ onSuccess: (saved) => { setAvatarUrl(saved?.avatarUrl || undefined); void profile.refetch(); }, onError: (error) => Alert.alert("لم تُرفع الصورة", error.message) });
+  const deleteAccount = trpc.account.delete.useMutation({ onSuccess: () => { void logout(); }, onError: (error) => Alert.alert("تعذر حذف الحساب", error.message || "حاول مرة أخرى.") });
 
   useEffect(() => {
     const data = profile.data;
@@ -98,6 +99,7 @@ export default function MemoryScreen() {
         <View className="mt-3 gap-2">{memories.data?.length ? memories.data.map((item) => <View key={item.id} className="rounded-2xl border border-border bg-surface p-4"><Text className="text-sm leading-6 text-foreground">{item.content}</Text><Text className="mt-2 text-xs text-muted">{item.category} · موافق عليه</Text></View>) : <Text className="text-sm text-muted">لا توجد ذكريات محفوظة بعد.</Text>}</View>
         <View className="mt-7 rounded-3xl border border-border bg-surface p-4"><Text className="text-base font-bold text-foreground">مصدر سوري عام بإذن واضح</Text><Text className="mt-2 text-xs leading-5 text-muted">أضف رابطًا عامًا تملك حق استخدامه. يمر الرابط بالمراجعة قبل استخدامه.</Text><TextInput value={source} onChangeText={setSource} autoCapitalize="none" keyboardType="url" placeholder="https://..." placeholderTextColor={colors.muted} className="mt-3 rounded-2xl border border-border bg-background px-4 py-3 text-sm text-foreground" /><Pressable onPress={() => submitSource.mutate({ url: source.trim(), permission: true })} className="mt-3 self-start rounded-full bg-foreground px-5 py-3"><Text className="font-bold text-background">إرسال للمراجعة</Text></Pressable></View>
         <Text className="mt-4 text-xs leading-5 text-muted">المصادر المضافة: {sources.data?.length || 0} · لا تدخل المعرفة العامة قبل المراجعة.</Text>
+        <View className="mt-8 rounded-3xl border border-error/30 bg-error/5 p-4"><Text className="text-base font-bold text-error">حذف الحساب والبيانات</Text><Text className="mt-2 text-xs leading-5 text-muted">يحذف ملفك وذكرياتك ومحادثاتك وتوليداتك وملفاتك ومصادرك من مساحة Flsko، ثم ينهي جلستك. لا يمكن التراجع عن هذا الإجراء.</Text><Pressable disabled={deleteAccount.isPending} onPress={() => Alert.alert("تأكيد حذف الحساب", "سيتم حذف كل بياناتك السحابية نهائيًا. هل تريد المتابعة؟", [{ text: "إلغاء", style: "cancel" }, { text: "حذف نهائي", style: "destructive", onPress: () => deleteAccount.mutate() }])} className="mt-4 self-start rounded-full bg-error px-5 py-3"><Text className="font-bold text-background">{deleteAccount.isPending ? "جارٍ الحذف..." : "حذف حسابي نهائيًا"}</Text></Pressable></View>
       </ScrollView>
     </ScreenContainer>
   );
