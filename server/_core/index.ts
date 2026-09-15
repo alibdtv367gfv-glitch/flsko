@@ -1,6 +1,8 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
+import path from "path";
+import fs from "fs";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
@@ -71,6 +73,13 @@ async function startServer() {
       createContext,
     }),
   );
+
+  // Render serves the exported Expo web client and the Node API from one public service.
+  const webDist = path.resolve(process.cwd(), "web-dist");
+  if (fs.existsSync(webDist)) {
+    app.use(express.static(webDist));
+    app.get("*", (_req, res) => res.sendFile(path.join(webDist, "index.html")));
+  }
 
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);
