@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, lt, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   agentMessages,
@@ -105,6 +105,18 @@ export async function createMusicGeneration(data: typeof musicGenerations.$infer
 export async function updateMusicGeneration(id: number, userId: number, data: Partial<typeof musicGenerations.$inferInsert>) {
   const db = await getDb(); if (!db) return;
   await db.update(musicGenerations).set(data).where(and(eq(musicGenerations.id, id), eq(musicGenerations.userId, userId)));
+}
+
+export async function countRecentGenerations(userId: number, kind: "video", since: Date) {
+  const db = await getDb(); if (!db) return 0;
+  const result = await db.select({ total: count() }).from(generations).where(and(eq(generations.userId, userId), eq(generations.kind, kind), gte(generations.createdAt, since)));
+  return Number(result[0]?.total ?? 0);
+}
+
+export async function countRecentMusicGenerations(userId: number, since: Date) {
+  const db = await getDb(); if (!db) return 0;
+  const result = await db.select({ total: count() }).from(musicGenerations).where(and(eq(musicGenerations.userId, userId), gte(musicGenerations.createdAt, since)));
+  return Number(result[0]?.total ?? 0);
 }
 
 function getInsertId(result: unknown): number { return Number((result as { insertId?: number | bigint }).insertId ?? 0); }

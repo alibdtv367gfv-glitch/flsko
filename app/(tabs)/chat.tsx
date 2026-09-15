@@ -13,6 +13,7 @@ import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
 
 type VoiceGender = "male" | "female";
+type ChatMode = "natural" | "pro" | "pro-max";
 type ChatMessage = { id: string; role: "user" | "assistant"; content: string; sourceId?: string };
 
 type DeviceVoice = { identifier: string; language?: string; name?: string };
@@ -31,6 +32,7 @@ export default function ChatScreen() {
   const files = trpc.files.list.useQuery(undefined, { enabled: isAuthenticated });
   const [draft, setDraft] = useState("");
   const [voiceGender, setVoiceGender] = useState<VoiceGender>("female");
+  const [chatMode, setChatMode] = useState<ChatMode>("natural");
   const [voices, setVoices] = useState<DeviceVoice[]>([]);
   const [lastPrompt, setLastPrompt] = useState("");
   const [lastSourceId, setLastSourceId] = useState<string | undefined>();
@@ -123,13 +125,13 @@ export default function ChatScreen() {
     setDraft("");
     setLastPrompt(message);
     setLastSourceId(undefined);
-    mutation.mutate({ message, attachmentIds: selectedFileIds });
+    mutation.mutate({ message, mode: chatMode, attachmentIds: selectedFileIds });
     setSelectedFileIds([]);
   };
 
   const retryWithAnotherSource = () => {
     if (!lastPrompt || mutation.isPending) return;
-    mutation.mutate({ message: lastPrompt, excludeSource: lastSourceId });
+    mutation.mutate({ message: lastPrompt, mode: chatMode, excludeSource: lastSourceId });
   };
 
   return (
@@ -150,6 +152,21 @@ export default function ChatScreen() {
                 <Text className="text-center text-xs font-bold" style={{ color: voiceGender === gender ? colors.background : colors.foreground }}>{gender === "female" ? "صوت فتاة" : "صوت رجل"}</Text>
               </Pressable>
             ))}
+          </View>
+        </View>
+
+        <View className="mt-3 rounded-2xl border border-border bg-surface p-3">
+          <Text className="text-xs font-bold text-muted">أسلوب الإجابة</Text>
+          <View className="mt-2 flex-row gap-2">
+            {(["natural", "pro", "pro-max"] as const).map((mode) => {
+              const active = chatMode === mode;
+              return (
+                <Pressable key={mode} onPress={() => setChatMode(mode)} style={({ pressed }) => [{ flex: 1, borderRadius: 12, paddingVertical: 10, backgroundColor: active ? colors.primary : colors.background }, pressed && { opacity: 0.8 }]}>
+                  <Text className="text-center text-xs font-bold" style={{ color: active ? colors.background : colors.foreground }}>{mode === "natural" ? "إجابة سريعة" : mode === "pro" ? "برو" : "برو ماكس"}</Text>
+                  <Text className="mt-1 text-center text-[10px]" style={{ color: active ? `${colors.background}CC` : colors.muted }}>{mode === "natural" ? "طبيعي" : mode === "pro" ? "تفكير" : "تحليل"}</Text>
+                </Pressable>
+              );
+            })}
           </View>
         </View>
 

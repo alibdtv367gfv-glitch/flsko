@@ -89,6 +89,8 @@ export default function CreateScreen() {
             className="mt-3 min-h-[150px] rounded-2xl border border-border bg-background p-4 text-base leading-7 text-foreground"
           />
           <Text className="mt-2 text-xs leading-5 text-muted">كلما وصفت الحركة، العدسة، الإضاءة والمزاج بدقة، تحسنت النتيجة.</Text>
+          {kind === "video" && <Text className="mt-2 text-xs leading-5 text-warning">الفيديو: مقطع واحد كل 12 ساعة، حتى 5 ثوانٍ وبدقة 720p للحفاظ على سرعة الخدمة.</Text>}
+          {kind === "music" && <Text className="mt-2 text-xs leading-5 text-warning">الموسيقى: مقطعان كل 24 ساعة، حتى 60 ثانية للمقطع الواحد.</Text>}
           <Pressable onPress={submit} disabled={mutation.isPending || musicMutation.isPending} style={({ pressed }) => [pressed && { transform: [{ scale: 0.98 }] }, (mutation.isPending || musicMutation.isPending) && { opacity: 0.65 }]} className="mt-4 flex-row items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-4">
             {(mutation.isPending || musicMutation.isPending) && <ActivityIndicator color={colors.background} />}
             <Text className="font-black text-background">{mutation.isPending || musicMutation.isPending ? "جارٍ الإبداع..." : `إنشاء ${kind === "image" ? "الصورة" : kind === "video" ? "الفيديو" : "الموسيقى"}`}</Text>

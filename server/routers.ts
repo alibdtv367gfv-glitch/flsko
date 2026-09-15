@@ -34,7 +34,7 @@ export const appRouter = router({
     status: publicProcedure.query(() => getFlskoProviderStatus()),
 
     chat: protectedProcedure
-      .input(z.object({ message: z.string().trim().min(1).max(6000), excludeSource: z.string().max(64).optional(), attachmentIds: z.array(z.number().int().positive()).max(4).optional() }))
+      .input(z.object({ message: z.string().trim().min(1).max(6000), mode: z.enum(["natural", "pro", "pro-max"]).default("natural"), excludeSource: z.string().max(64).optional(), attachmentIds: z.array(z.number().int().positive()).max(4).optional() }))
       .mutation(async ({ ctx, input }) => {
         assertRateLimit(ctx.user.id, "chat", 30);
         await db.cleanupStaleTransientData(ctx.user.id);
@@ -43,7 +43,7 @@ export const appRouter = router({
         const profile = await db.getUserProfile(ctx.user.id);
         const files = await db.listUserFiles(ctx.user.id);
         const attachments = files.filter((file) => input.attachmentIds?.includes(file.id)).map((file) => ({ name: file.name, mimeType: file.mimeType, storageUrl: file.storageUrl }));
-        const result = await answerAsFlsko(input.message, memories.filter((item) => item.consent).map((item) => item.content), recentConversation.reverse().map((item) => ({ role: item.role, content: item.content })), input.excludeSource ? [input.excludeSource] : [], profile, attachments);
+        const result = await answerAsFlsko(input.message, memories.filter((item) => item.consent).map((item) => item.content), recentConversation.reverse().map((item) => ({ role: item.role, content: item.content })), input.excludeSource ? [input.excludeSource] : [], profile, attachments, input.mode);
         await db.createAgentMessage({ userId: ctx.user.id, role: "user", content: input.message });
         await db.createAgentMessage({ userId: ctx.user.id, role: "assistant", content: result.text });
         return result;
@@ -53,6 +53,11 @@ export const appRouter = router({
       .input(z.object({ kind: z.enum(["image", "video"]), prompt: z.string().trim().min(3).max(4000) }))
       .mutation(async ({ ctx, input }) => {
         assertRateLimit(ctx.user.id, `generate-${input.kind}`, 6);
+        if (input.kind === "video") {
+          const since = new Date(Date.now() - 12 * 60 * 60 * 1000);
+          const used = await db.countRecentGenerations(ctx.user.id, "video", since);
+          if (used >= 1) throw new Error("حد الفيديو هو مقطع واحد كل 12 ساعة لكل حساب. الجودة القصوى 720p والمدة 5 ثوانٍ للحفاظ على السلاسة.");
+        }
         const generationId = await db.createGeneration({ userId: ctx.user.id, kind: input.kind, prompt: input.prompt, status: "queued" });
         try {
           if (input.kind === "image") {
@@ -77,6 +82,9 @@ export const appRouter = router({
       .input(z.object({ prompt: z.string().trim().min(3).max(4000) }))
       .mutation(async ({ ctx, input }) => {
         assertRateLimit(ctx.user.id, "music", 4);
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const used = await db.countRecentMusicGenerations(ctx.user.id, since);
+        if (used >= 2) throw new Error("حد الموسيقى مقطعان كل 24 ساعة لكل حساب، ومدة المقطع الواحد حتى 60 ثانية للحفاظ على استقرار الخادم.");
         const id = await db.createMusicGeneration({ userId: ctx.user.id, prompt: input.prompt, status: "queued" });
         try {
           const result = await createFlskoMusic(input.prompt);
