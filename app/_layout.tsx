@@ -5,7 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
-import { Platform, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, Text, View } from "react-native";
 import * as Network from "expo-network";
 import "@/lib/_core/nativewind-pressable";
 import { ThemeProvider } from "@/lib/theme-provider";
@@ -33,11 +33,20 @@ export const unstable_settings = {
 function AuthGate() {
   const { loading, isAuthenticated } = useAuth();
   const segments = useSegments();
+  const networkState = Network.useNetworkState();
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const isOAuthCallback = segments[0] === "oauth";
-  const handleLogin = async () => { try { await startOAuthLogin(); } catch { /* keep the gate visible; the user can retry */ } };
+  const handleLogin = async () => {
+    if (loginBusy) return;
+    setLoginError(null);
+    if (networkState.isInternetReachable === false) { setLoginError("لا يوجد اتصال بالإنترنت. اتصل بالشبكة ثم اضغط إعادة المحاولة."); return; }
+    setLoginBusy(true);
+    try { await startOAuthLogin(); } catch (error) { setLoginBusy(false); setLoginError(error instanceof Error ? error.message : "تعذر فتح تسجيل الدخول."); }
+  };
   if (isOAuthCallback) return <Stack screenOptions={{ headerShown: false }}><Stack.Screen name="oauth/callback" /></Stack>;
   if (loading) return <ScreenContainer edges={["top", "bottom", "left", "right"]} className="items-center justify-center px-6"><Text className="text-3xl font-black text-foreground">Flsko</Text><Text className="mt-3 text-center text-muted">جارٍ التحقق من تسجيل الدخول...</Text></ScreenContainer>;
-  if (!isAuthenticated) return <ScreenContainer edges={["top", "bottom", "left", "right"]} className="items-center justify-center px-6"><View className="w-full max-w-md items-center rounded-[32px] border border-border bg-surface p-6"><Text className="text-sm font-bold text-primary">Flsko · فلسقوا</Text><Text className="mt-3 text-center text-3xl font-black text-foreground">مرحبًا بك</Text><Text className="mt-3 text-center leading-6 text-muted">سجّل الدخول أولًا للوصول إلى المحادثة وإنشاء الوسائط والذاكرة السحابية.</Text><Pressable onPress={() => void handleLogin()} style={({ pressed }) => [{ backgroundColor: "#0A7EA4" }, pressed && { opacity: 0.8 }]} className="mt-6 w-full rounded-2xl px-4 py-4"><Text className="text-center text-base font-black text-white">تسجيل الدخول للمتابعة</Text></Pressable><Text className="mt-4 text-center text-xs leading-5 text-muted">سيتم فتح تسجيل الدخول الرسمي ثم العودة تلقائيًا إلى التطبيق.</Text></View></ScreenContainer>;
+  if (!isAuthenticated) return <ScreenContainer edges={["top", "bottom", "left", "right"]} className="items-center justify-center px-6"><View className="w-full max-w-md items-center rounded-[32px] border border-border bg-surface p-6"><Text className="text-sm font-bold text-primary">Flsko · فلسقوا</Text><Text className="mt-3 text-center text-3xl font-black text-foreground">مرحبًا بك</Text><Text className="mt-3 text-center leading-6 text-muted">سجّل الدخول أولًا للوصول إلى المحادثة وإنشاء الوسائط والذاكرة السحابية.</Text>{loginError && <View className="mt-4 w-full rounded-2xl border border-error bg-error/10 p-3"><Text className="text-center text-sm font-bold text-error">{loginError}</Text></View>}<Pressable onPress={() => void handleLogin()} disabled={loginBusy} style={({ pressed }) => [{ backgroundColor: loginBusy ? "#94A3B8" : "#0A7EA4" }, pressed && { opacity: 0.8 }]} className="mt-6 w-full rounded-2xl px-4 py-4">{loginBusy ? <View className="flex-row items-center justify-center gap-2"><ActivityIndicator color="#FFFFFF" /><Text className="text-center text-base font-black text-white">جارٍ فتح تسجيل الدخول...</Text></View> : <Text className="text-center text-base font-black text-white">{loginError ? "إعادة المحاولة" : "تسجيل الدخول للمتابعة"}</Text>}</Pressable><Text className="mt-4 text-center text-xs leading-5 text-muted">سيتم فتح تسجيل الدخول الرسمي ثم العودة تلقائيًا إلى التطبيق.</Text></View></ScreenContainer>;
   return <Stack screenOptions={{ headerShown: false }}><Stack.Screen name="(tabs)" /><Stack.Screen name="privacy" /><Stack.Screen name="suggestions" /><Stack.Screen name="download" /><Stack.Screen name="development" /><Stack.Screen name="admin-suggestions" /></Stack>;
 }
 

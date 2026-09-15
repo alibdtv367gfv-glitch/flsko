@@ -4,7 +4,7 @@ import * as Auth from "@/lib/_core/auth";
 import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Text } from "react-native";
+import { ActivityIndicator, Pressable, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function OAuthCallback() {
@@ -241,28 +241,29 @@ export default function OAuthCallback() {
           <>
             <ActivityIndicator size="large" />
             <Text className="mt-4 text-base leading-6 text-center text-foreground">
-              Completing authentication...
+              جارٍ إكمال تسجيل الدخول...
             </Text>
           </>
         )}
         {status === "success" && (
           <>
             <Text className="text-base leading-6 text-center text-foreground">
-              Authentication successful!
+              تم تسجيل الدخول بنجاح
             </Text>
             <Text className="text-base leading-6 text-center text-foreground">
-              Redirecting...
+              جارٍ فتح التطبيق...
             </Text>
           </>
         )}
         {status === "error" && (
           <>
             <Text className="mb-2 text-xl font-bold leading-7 text-error">
-              Authentication failed
+              تعذر إكمال تسجيل الدخول
             </Text>
             <Text className="text-base leading-6 text-center text-foreground">
-              {errorMessage}
+              {errorMessage || "حدث خطأ غير متوقع."}
             </Text>
+            <Pressable onPress={() => router.replace("/")} style={({ pressed }) => [{ backgroundColor: "#0A7EA4", borderRadius: 16, paddingHorizontal: 24, paddingVertical: 16, marginTop: 16 }, pressed && { opacity: 0.75 }]}><Text style={{ color: "#FFFFFF", fontWeight: "800" }}>إعادة المحاولة</Text></Pressable>
           </>
         )}
       </ThemedView>
