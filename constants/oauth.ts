@@ -1,4 +1,5 @@
 import * as Linking from "expo-linking";
+import * as WebBrowser from "expo-web-browser";
 import * as ReactNative from "react-native";
 
 // Extract scheme from bundle ID (last segment timestamp, prefixed with "manus")
@@ -119,7 +120,8 @@ export async function startOAuthLogin(): Promise<string | null> {
   }
 
   try {
-    await Linking.openURL(loginUrl);
+    const redirectUri = getRedirectUri();
+    await WebBrowser.openAuthSessionAsync(loginUrl, redirectUri);
   } catch (error) {
     console.error("[OAuth] Failed to open login URL:", error);
     throw new Error("تعذر فتح صفحة تسجيل الدخول. تحقق من اتصال الإنترنت وحاول مرة أخرى.");
