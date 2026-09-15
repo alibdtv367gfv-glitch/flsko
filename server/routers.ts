@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { COOKIE_NAME } from "../shared/const.js";
 import { getSessionCookieOptions } from "./_core/cookies";
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
 import { answerAsFlsko, createFlskoImage, createFlskoVideo, createFlskoMusic, getFlskoProviderStatus } from "./flsko-ai";
 import { storagePut } from "./storage";
@@ -171,6 +171,7 @@ export const appRouter = router({
           return { accepted: true as const, delivered: false };
         }
       }),
+    adminList: adminProcedure.query(() => db.listSuggestionsForAdmin()),
   }),
 });
 

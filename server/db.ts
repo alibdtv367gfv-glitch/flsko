@@ -120,6 +120,11 @@ export async function listKnowledgeSources(userId: number) { const db = await ge
 export async function createContentReport(data: InsertContentReport) { const db = await getDb(); if (!db) throw new Error("Database not available"); return getInsertId(await db.insert(contentReports).values(data)); }
 export async function createSuggestion(data: typeof suggestions.$inferInsert) { const db = await getDb(); if (!db) throw new Error("Database not available"); return getInsertId(await db.insert(suggestions).values(data)); }
 export async function updateSuggestionStatus(id: number, userId: number, emailStatus: typeof suggestions.$inferInsert.emailStatus) { const db = await getDb(); if (!db) return; await db.update(suggestions).set({ emailStatus }).where(and(eq(suggestions.id, id), eq(suggestions.userId, userId))); }
+export async function listSuggestionsForAdmin() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ id: suggestions.id, category: suggestions.category, content: suggestions.content, emailStatus: suggestions.emailStatus, createdAt: suggestions.createdAt, userName: users.name, userEmail: users.email }).from(suggestions).leftJoin(users, eq(suggestions.userId, users.id)).orderBy(desc(suggestions.createdAt));
+}
 
 /**
  * Removes every application-owned record for a user in one transaction.

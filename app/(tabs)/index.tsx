@@ -106,6 +106,11 @@ export default function HomeScreen() {
           <Text className="text-sm font-black text-primary">أضف اقتراحًا لتطوير Flsko</Text>
           <Text className="mt-1 text-xs leading-5 text-muted">شارك فكرة مستقبلية — تصل للفريق من خلال الخادم دون كشف بريد المالك.</Text>
         </Pressable>
+        <Pressable onPress={() => router.push("/download")} style={({ pressed }) => [pressed && { opacity: 0.75 }]} className="mt-3 rounded-2xl bg-foreground px-4 py-4">
+          <Text className="text-sm font-black text-background">موقع تحميل Flsko</Text>
+          <Text className="mt-1 text-xs leading-5 text-background/70">الروبوت الرسمي ونسخة الهاتف من الرابط الآمن</Text>
+        </Pressable>
+        {user?.role === "admin" && <Pressable onPress={() => router.push("/admin-suggestions")} style={({ pressed }) => [pressed && { opacity: 0.75 }]} className="mt-3 rounded-2xl border border-primary bg-surface px-4 py-4"><Text className="text-sm font-black text-primary">لوحة اقتراحات الفريق</Text><Text className="mt-1 text-xs leading-5 text-muted">مراجعة الاقتراحات الواردة من المستخدمين</Text></Pressable>}
         <Text className="mt-4 text-center text-[11px] text-muted">© 2026 علي يوسف · Flsko</Text>
       </ScrollView>
     </ScreenContainer>
