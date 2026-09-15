@@ -37,7 +37,10 @@ export default function CreateScreen() {
 
   const submit = () => {
     if (!isAuthenticated) {
-      void startOAuthLogin();
+      Alert.alert("تسجيل الدخول مطلوب", "سجّل الدخول أولًا لإنشاء الوسائط وحفظها في مكتبتك السحابية.", [
+        { text: "لاحقًا", style: "cancel" },
+        { text: "تسجيل الدخول", onPress: () => void startOAuthLogin() },
+      ]);
       return;
     }
     if (prompt.trim().length < 3) {

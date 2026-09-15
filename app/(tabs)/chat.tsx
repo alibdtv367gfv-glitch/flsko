@@ -76,7 +76,13 @@ export default function ChatScreen() {
   };
 
   const send = () => {
-    if (!isAuthenticated) { void startOAuthLogin(); return; }
+    if (!isAuthenticated) {
+      Alert.alert("تسجيل الدخول مطلوب", "سجّل الدخول أولًا لحفظ المحادثة وتشغيل الوكيل السحابي.", [
+        { text: "لاحقًا", style: "cancel" },
+        { text: "تسجيل الدخول", onPress: () => void startOAuthLogin() },
+      ]);
+      return;
+    }
     if (!draft.trim() || mutation.isPending) return;
     const message = draft.trim();
     setDraft("");
