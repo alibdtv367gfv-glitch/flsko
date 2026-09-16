@@ -6,3 +6,8 @@ account_id = "3e2a7a8b3166f53a66f0afaf91d0fbe9"
 
 [vars]
 FLSKO_HF_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "flsko-db"
+database_id = "a45f1dcc-e8ef-45b0-a1bb-ca249364eccc"
