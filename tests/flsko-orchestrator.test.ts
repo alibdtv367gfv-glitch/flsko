@@ -9,6 +9,7 @@ describe("فلسقوا orchestrator", () => {
     expect(status.name).toBe("Flsko");
     expect(status.orchestration).toBe("automatic");
     expect(status.userSeesModels).toBe(false);
+    expect(status.availableChannels).toBeGreaterThanOrEqual(1);
   });
 
   it("adapts tone without turning Syrian culture into a stereotype", () => {

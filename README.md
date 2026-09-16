@@ -1,3 +1,11 @@
+---
+title: Flsko
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+---
+
 # Flsko — الوكيل السوري الذكي
 
 Flsko تطبيق موبايل عربي أولًا مبني بـ Expo وReact Native وTypeScript. العلامة الظاهرة هي Flsko، وعندما يتحدث الوكيل بالعربية عن اسمه يقول «فلسقوا». يجمع التطبيق بين المحادثة، إنشاء الصور والفيديو، الذاكرة السحابية الاختيارية، ومصادر المعرفة العامة التي يضيفها المستخدم بإذن واضح.
@@ -27,6 +35,8 @@ FLSKO_OPENAI_MODEL=gpt-4o-mini
 FLSKO_LLM_PROVIDER_URL=https://your-openai-compatible-endpoint/v1/chat/completions
 FLSKO_LLM_PROVIDER_KEY=optional-secret
 FLSKO_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
+HF_TOKEN=secret-with-inference-providers-permission
+FLSKO_HF_MODEL=meta-llama/Llama-3.1-8B-Instruct
 FLSKO_RESEARCH_PROVIDER_URL=https://your-open-research-endpoint/search
 FLSKO_RESEARCH_PROVIDER_KEY=optional-secret
 FLSKO_IMAGE_PROVIDER_URL=https://your-image-provider/generate
