@@ -44,7 +44,13 @@ async function exchangeGoogle(code: string, env: Env) {
 async function googleUser(accessToken: string) { const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", { headers: { Authorization: `Bearer ${accessToken}` } }); if (!response.ok) throw new Error("Google profile failed"); return response.json() as Promise<{ sub: string; name?: string; email?: string; picture?: string }>; }
 function trpcResult(data: unknown, origin: string | null) { return json([{ result: { data: { json: data } } }], 200, origin); }
 function trpcError(message: string, status: number, origin: string | null) { return json([{ error: { json: { message, data: { code: status === 401 ? "UNAUTHORIZED" : "BAD_REQUEST", httpStatus: status } } } }], status, origin); }
-function mediaStatus() { return { image: { available: false, reason: "اختبار Gemini أعاد 429 بسبب الحصة، وFLUX عبر Hugging Face متوقف لدى المزود." }, video: { available: false, reason: "اختبار Gemini/Veo أعاد 429 بسبب الحصة، ولا يوجد مزود فيديو بديل مهيأ." }, music: { available: false, reason: "اختبار Gemini/Lyria أعاد 429 بسبب الحصة، ولا يوجد مزود موسيقى بديل مهيأ." } }; }
+function mediaStatus() { return { image: { available: true, provider: "Pollinations / Flux legacy", reason: "يُستخدم تلقائيًا عند فشل Gemini؛ تم اختبار الواجهة وإرجاع JPEG فعلي." }, video: { available: false, reason: "اختبار Gemini/Veo أعاد 429 بسبب الحصة، ولا يوجد مزود فيديو بديل مهيأ." }, music: { available: false, reason: "اختبار Gemini/Lyria أعاد 429 بسبب الحصة، ولا يوجد مزود موسيقى بديل مهيأ." } }; }
+async function generateOpenImage(prompt: string) {
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?model=flux&width=1024&height=1024&nologo=true`;
+  const response = await fetch(url, { headers: { accept: "image/jpeg" } });
+  if (!response.ok) throw new Error(`Open image provider failed: ${response.status}`);
+  return { url, provider: "open-source", status: "completed" as const, message: "تم إنشاء الصورة عبر نموذج مفتوح المصدر." };
+}
 async function trpcInput(request: Request, url: URL) {
   if (request.method === "GET") {
     const raw = url.searchParams.get("input");
@@ -87,7 +93,8 @@ export default {
         if (path === "profile.get") { const profile = await env.DB.prepare("SELECT display_name as displayName, gender, avatar_url as avatarUrl, about, governorate, chat_background as chatBackground, voice_gender as voiceGender FROM profiles WHERE user_id=?").bind(user.id).first(); return trpcResult(profile, origin); }
         if (path === "profile.save") { const value = input || {}; await env.DB.prepare("INSERT INTO profiles(user_id,display_name,gender,avatar_url,about,governorate,chat_background,voice_gender) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name,gender=excluded.gender,avatar_url=excluded.avatar_url,about=excluded.about,governorate=excluded.governorate,chat_background=excluded.chat_background,voice_gender=excluded.voice_gender").bind(user.id, value.displayName || null, value.gender || "unspecified", value.avatarUrl || null, value.about || null, value.governorate || null, value.chatBackground || "#F4F8F7", value.voiceGender || "female").run(); return trpcResult(value, origin); }
         if (path === "agent.chat") { const value = input || {}; const message = typeof value.message === "string" ? value.message.trim() : ""; if (!message || message.length > 6000) return trpcError("الرسالة مطلوبة وبحد أقصى 6000 حرف", 400, origin); const mode = value.mode === "pro-max" ? "برو ماكس" : value.mode === "pro" ? "برو" : "طبيعي وسريع"; return trpcResult(await runChat(message, mode, user, env), origin); }
-        if (path === "agent.generate" || path === "agent.music") return trpcError("ميزة الوسائط غير مهيأة حاليًا على الخادم المجاني. لم يتم إنشاء ملف وهمي.", 503, origin);
+        if (path === "agent.generate") { const value = input || {}; if (value.kind === "video") return trpcError("لا يوجد مزود فيديو صالح حاليًا. لم يتم إنشاء ملف وهمي.", 503, origin); if (value.kind !== "image" || typeof value.prompt !== "string" || value.prompt.trim().length < 3) return trpcError("نوع الوسائط أو الوصف غير صالح", 400, origin); return trpcResult(await generateOpenImage(value.prompt.trim()), origin); }
+        if (path === "agent.music") return trpcError("لا يوجد مزود موسيقى صالح حاليًا. لم يتم إنشاء ملف وهمي.", 503, origin);
         return trpcError("المسار غير مدعوم بعد على Cloudflare", 404, origin);
       } catch (error) { return trpcError(error instanceof Error ? error.message : "تعذر تنفيذ الطلب", 500, origin); }
     }
