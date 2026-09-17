@@ -42,6 +42,30 @@ async function exchangeGoogle(code: string, env: Env) {
   return response.json() as Promise<{ access_token: string }>;
 }
 async function googleUser(accessToken: string) { const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", { headers: { Authorization: `Bearer ${accessToken}` } }); if (!response.ok) throw new Error("Google profile failed"); return response.json() as Promise<{ sub: string; name?: string; email?: string; picture?: string }>; }
+function trpcResult(data: unknown, origin: string | null) { return json([{ result: { data: { json: data } } }], 200, origin); }
+function trpcError(message: string, status: number, origin: string | null) { return json([{ error: { json: { message, data: { code: status === 401 ? "UNAUTHORIZED" : "BAD_REQUEST", httpStatus: status } } } }], status, origin); }
+function mediaStatus() { return { image: { available: false, reason: "اختبار Gemini أعاد 429 بسبب الحصة، وFLUX عبر Hugging Face متوقف لدى المزود." }, video: { available: false, reason: "اختبار Gemini/Veo أعاد 429 بسبب الحصة، ولا يوجد مزود فيديو بديل مهيأ." }, music: { available: false, reason: "اختبار Gemini/Lyria أعاد 429 بسبب الحصة، ولا يوجد مزود موسيقى بديل مهيأ." } }; }
+async function trpcInput(request: Request, url: URL) {
+  if (request.method === "GET") {
+    const raw = url.searchParams.get("input");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, { json?: unknown }>;
+    return parsed["0"]?.json ?? null;
+  }
+  const body = await request.json().catch(() => null) as Record<string, { json?: unknown }> | null;
+  return body?.["0"]?.json ?? null;
+}
+async function runChat(message: string, mode: string, user: Record<string, unknown>, env: Env) {
+  const memories = await env.DB.prepare("SELECT content FROM memories WHERE user_id=? AND consent=1 ORDER BY created_at DESC LIMIT 20").bind(user.id).all<{ content: string }>();
+  const response = await fetch("https://router.huggingface.co/v1/chat/completions", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${env.HF_TOKEN}` }, body: JSON.stringify({ model: env.FLSKO_HF_MODEL || "meta-llama/Llama-3.1-8B-Instruct", messages: [{ role: "system", content: `${SYSTEM_PROMPT}\nوضع الإجابة: ${mode}.\nذاكرة المستخدم المصرح بها:\n${memories.results.map((x) => x.content).join("\n")}` }, { role: "user", content: message }], temperature: 0.6, max_tokens: 1000 }) });
+  const payload = await response.json().catch(() => ({})) as { choices?: Array<{ message?: { content?: unknown } }> };
+  if (!response.ok) throw new Error("تعذر الحصول على رد من مزود النموذج");
+  const text = payload.choices?.[0]?.message?.content;
+  if (typeof text !== "string" || !text.trim()) throw new Error("لم يصل رد نصي من النموذج");
+  await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "user", message).run();
+  await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "assistant", text.trim()).run();
+  return { text: text.trim(), provider: "orchestrator", sourceId: "huggingface", compared: 1 };
+}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -49,6 +73,24 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(origin) });
     const url = new URL(request.url);
     if (url.pathname === "/" || url.pathname === "/api/health") return json({ ok: true, service: "flsko-api", database: "d1", timestamp: Date.now() }, 200, origin);
+    if (url.pathname.startsWith("/api/trpc/")) {
+      const path = url.pathname.slice("/api/trpc/".length).split(",")[0];
+      try {
+        const input = await trpcInput(request, url) as Record<string, unknown> | null;
+        const user = await currentUser(request, env);
+        if (path === "system.health" || path === "agent.status" || path === "media.status") return trpcResult(path === "system.health" ? { status: "ok", service: "flsko" } : path === "media.status" ? mediaStatus() : { name: "Flsko", orchestration: "automatic", openSourceSearch: true, userSeesModels: false, privacy: "cloud-only-with-consent" }, origin);
+        if (path === "auth.me") return trpcResult(user, origin);
+        if (path === "auth.logout") { const token = getBearer(request) || getCookie(request, "app_session_id"); if (token) await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(await sha256(token)).run(); return trpcResult({ success: true }, origin); }
+        if (!user) return trpcError("تسجيل الدخول مطلوب", 401, origin);
+        if (path === "memory.list") { const rows = await env.DB.prepare("SELECT id, category, content, consent, created_at as createdAt FROM memories WHERE user_id=? ORDER BY created_at DESC LIMIT 100").bind(user.id).all(); return trpcResult(rows.results, origin); }
+        if (path === "memory.remember") { const value = input || {}; if (value.consent !== true || typeof value.category !== "string" || typeof value.content !== "string") return trpcError("الفئة والمحتوى والموافقة مطلوبة", 400, origin); await env.DB.prepare("INSERT INTO memories(user_id,category,content,consent) VALUES(?,?,?,1)").bind(user.id, value.category.slice(0, 64), value.content.slice(0, 1200)).run(); return trpcResult({ accepted: true }, origin); }
+        if (path === "profile.get") { const profile = await env.DB.prepare("SELECT display_name as displayName, gender, avatar_url as avatarUrl, about, governorate, chat_background as chatBackground, voice_gender as voiceGender FROM profiles WHERE user_id=?").bind(user.id).first(); return trpcResult(profile, origin); }
+        if (path === "profile.save") { const value = input || {}; await env.DB.prepare("INSERT INTO profiles(user_id,display_name,gender,avatar_url,about,governorate,chat_background,voice_gender) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name,gender=excluded.gender,avatar_url=excluded.avatar_url,about=excluded.about,governorate=excluded.governorate,chat_background=excluded.chat_background,voice_gender=excluded.voice_gender").bind(user.id, value.displayName || null, value.gender || "unspecified", value.avatarUrl || null, value.about || null, value.governorate || null, value.chatBackground || "#F4F8F7", value.voiceGender || "female").run(); return trpcResult(value, origin); }
+        if (path === "agent.chat") { const value = input || {}; const message = typeof value.message === "string" ? value.message.trim() : ""; if (!message || message.length > 6000) return trpcError("الرسالة مطلوبة وبحد أقصى 6000 حرف", 400, origin); const mode = value.mode === "pro-max" ? "برو ماكس" : value.mode === "pro" ? "برو" : "طبيعي وسريع"; return trpcResult(await runChat(message, mode, user, env), origin); }
+        if (path === "agent.generate" || path === "agent.music") return trpcError("ميزة الوسائط غير مهيأة حاليًا على الخادم المجاني. لم يتم إنشاء ملف وهمي.", 503, origin);
+        return trpcError("المسار غير مدعوم بعد على Cloudflare", 404, origin);
+      } catch (error) { return trpcError(error instanceof Error ? error.message : "تعذر تنفيذ الطلب", 500, origin); }
+    }
 
     if (url.pathname === "/api/google/start" && request.method === "GET") {
       const platform = url.searchParams.get("platform") === "native" ? "native" : "web";

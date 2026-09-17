@@ -37,6 +37,17 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS profiles (
+  user_id INTEGER PRIMARY KEY,
+  display_name TEXT,
+  gender TEXT NOT NULL DEFAULT 'unspecified',
+  avatar_url TEXT,
+  about TEXT,
+  governorate TEXT,
+  chat_background TEXT NOT NULL DEFAULT '#F4F8F7',
+  voice_gender TEXT NOT NULL DEFAULT 'female',
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS memories_user_idx ON memories(user_id);
 CREATE INDEX IF NOT EXISTS messages_user_idx ON messages(user_id);
