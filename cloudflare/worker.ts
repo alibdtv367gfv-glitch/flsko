@@ -10,6 +10,7 @@ export interface Env {
   FLSKO_VIDEO_PROVIDER_URL?: string;
   FLSKO_MUSIC_PROVIDER_URL?: string;
   FLSKO_VODER_API_URL?: string;
+  FLSKO_WAN_SPACE?: string;
   GOOGLE_OAUTH_CLIENT_ID: string;
   GOOGLE_OAUTH_CLIENT_SECRET: string;
   GOOGLE_OAUTH_REDIRECT_URI: string;
@@ -53,7 +54,7 @@ function mediaStatus(env?: Env) {
   return {
     policy: "automatic-best-available",
     image: { selected: env?.FLSKO_IMAGE_PROVIDER_URL ? "configured-open-provider" : "pollinations-flux", layers: [layer("gemini-image", "Gemini Image", "cloud-closed", 1, false, "حصة Gemini الحالية أعادت 429"), layer("configured-open-provider", "مزود صور مفتوح مخصص", "cloud-open", 2, Boolean(env?.FLSKO_IMAGE_PROVIDER_URL), env?.FLSKO_IMAGE_PROVIDER_URL ? "مهيأ" : "لم تتم تهيئته"), layer("pollinations-flux", "Pollinations Flux", "cloud-open", 3, true, "تم اختباره وأعاد JPEG فعليًا"), layer("mobile-sd-lcm", "Stable Diffusion LCM محلي", "on-device", 4, false, "يحتاج حزمة نموذج Android أصلية ولم تُضمّن بعد")] },
-    video: { selected: null, layers: [layer("gemini-veo", "Gemini/Veo", "cloud-closed", 1, false, "حصة Gemini الحالية أعادت 429"), layer("wan-provider", "Wan 2.x عبر مزود", "cloud-open", 2, Boolean(env?.FLSKO_VIDEO_PROVIDER_URL), env?.FLSKO_VIDEO_PROVIDER_URL ? "مهيأ" : "لا يوجد عنوان مزود"), layer("cogvideox-provider", "CogVideoX عبر مزود", "cloud-open", 3, false, "لا يوجد عنوان مزود مستقل"), layer("rife-mobile", "RIFE محلي", "on-device", 4, false, "يحتاج محرك صور محليًا ومدخلات إطارات")] },
+    video: { selected: env?.FLSKO_WAN_SPACE ? "wan-gradio" : null, layers: [layer("gemini-veo", "Gemini/Veo", "cloud-closed", 1, false, "حصة Gemini الحالية أعادت 429"), layer("wan-gradio", "Wan 2.1 Gradio Space", "cloud-open-queue", 2, Boolean(env?.FLSKO_WAN_SPACE), env?.FLSKO_WAN_SPACE ? "مهيأ بطابور Gradio" : "لم تتم تهيئته"), layer("wan-provider", "Wan 2.x عبر مزود", "cloud-open", 3, Boolean(env?.FLSKO_VIDEO_PROVIDER_URL), env?.FLSKO_VIDEO_PROVIDER_URL ? "مهيأ" : "لا يوجد عنوان مزود"), layer("cogvideox-provider", "CogVideoX عبر مزود", "cloud-open", 4, false, "لا يوجد عنوان مزود مستقل"), layer("rife-mobile", "RIFE محلي", "on-device", 5, false, "يحتاج محرك صور محليًا ومدخلات إطارات")] },
     music: { selected: env?.FLSKO_VODER_API_URL ? "voder" : null, layers: [layer("gemini-lyria", "Gemini/Lyria", "cloud-closed", 1, false, "حصة Gemini الحالية أعادت 429"), layer("ace-step-provider", "ACE-Step عبر مزود", "cloud-open", 2, Boolean(env?.FLSKO_MUSIC_PROVIDER_URL), env?.FLSKO_MUSIC_PROVIDER_URL ? "مهيأ" : "لا يوجد عنوان مزود"), layer("voder", "VODER / ACE-Step", "self-hosted-open", 3, Boolean(env?.FLSKO_VODER_API_URL), env?.FLSKO_VODER_API_URL ? "مهيأ" : "يحتاج خادم VODER مستقلًا؛ ليس مناسبًا لهاتف عادي"), layer("musicgen-mobile", "MusicGen Small محلي", "on-device", 4, false, "يحتاج نموذج INT8 وتكامل Android أصلي"), layer("audioldm-provider", "AudioLDM عبر مزود", "cloud-open", 5, false, "لا يوجد عنوان مزود مستقل")] },
     voice: { selected: env?.FLSKO_VODER_API_URL ? "voder" : "android-tts", layers: [layer("android-tts", "Android TTS", "on-device", 1, true, "متاح من خلال Expo Speech حسب أصوات الجهاز"), layer("voder", "VODER Voice Studio", "self-hosted-open", 2, Boolean(env?.FLSKO_VODER_API_URL), env?.FLSKO_VODER_API_URL ? "مهيأ" : "يحتاج خادم VODER مستقلًا؛ متطلباته أعلى من الهاتف"), layer("piper-onnx", "Piper ONNX عربي", "on-device", 3, false, "يحتاج حزمة صوت عربية داخل التطبيق"), layer("whisper-local", "Whisper محلي", "on-device", 4, false, "يحتاج نموذج ONNX محليًا"), layer("managed-whisper", "Whisper سحابي", "cloud-managed", 5, true, "متاح عند تهيئة خدمة التفريغ الخادمية")] },
   };
@@ -71,6 +72,24 @@ async function generateOpenImage(prompt: string, env: Env) {
   const response = await fetch(url, { headers: { accept: "image/jpeg" } });
   if (!response.ok) throw new Error(`Open image provider failed: ${response.status}`);
   return { url, provider: "open-source", status: "completed" as const, message: "تم إنشاء الصورة عبر نموذج مفتوح المصدر." };
+}
+async function submitWanVideo(prompt: string, env: Env) {
+  const space = env.FLSKO_WAN_SPACE || "https://wan-ai-wan2-1.hf.space";
+  const response = await fetch(`${space.replace(/\/$/, "")}/gradio_api/call/t2v_generation_async`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: [prompt, "1280*720", true, -1] }) });
+  const payload = await response.json().catch(() => ({})) as { event_id?: string };
+  if (!response.ok || !payload.event_id) throw new Error(`Wan Gradio queue failed: ${response.status}`);
+  return { status: "queued" as const, provider: "wan-gradio", jobId: payload.event_id, message: "تم إرسال الفيديو إلى طابور Wan المفتوح. سيحتاج وقتًا للمعالجة بسبب موارد Space المجانية." };
+}
+async function pollWanVideo(jobId: string, env: Env) {
+  const space = env.FLSKO_WAN_SPACE || "https://wan-ai-wan2-1.hf.space";
+  const response = await fetch(`${space.replace(/\/$/, "")}/gradio_api/call/t2v_generation_async/${encodeURIComponent(jobId)}`, { headers: { accept: "text/event-stream" } });
+  const body = await response.text();
+  const complete = body.split("event: complete").pop()?.match(/data:\s*(.+)/)?.[1]?.trim();
+  if (!response.ok || !complete) return { status: "queued" as const, provider: "wan-gradio", jobId, message: "الفيديو ما زال في طابور Wan." };
+  const data = JSON.parse(complete) as Array<{ url?: string; path?: string } | null>;
+  const file = data.find((item) => item && (item.url || item.path));
+  if (!file) return { status: "queued" as const, provider: "wan-gradio", jobId, message: "لم تكتمل مهمة Wan بعد أو أُعيدت دون ملف." };
+  return { status: "completed" as const, provider: "wan-gradio", jobId, url: file.url || file.path, message: "اكتمل فيديو Wan." };
 }
 async function trpcInput(request: Request, url: URL) {
   if (request.method === "GET") {
@@ -114,7 +133,8 @@ export default {
         if (path === "profile.get") { const profile = await env.DB.prepare("SELECT display_name as displayName, gender, avatar_url as avatarUrl, about, governorate, chat_background as chatBackground, voice_gender as voiceGender FROM profiles WHERE user_id=?").bind(user.id).first(); return trpcResult(profile, origin); }
         if (path === "profile.save") { const value = input || {}; await env.DB.prepare("INSERT INTO profiles(user_id,display_name,gender,avatar_url,about,governorate,chat_background,voice_gender) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name,gender=excluded.gender,avatar_url=excluded.avatar_url,about=excluded.about,governorate=excluded.governorate,chat_background=excluded.chat_background,voice_gender=excluded.voice_gender").bind(user.id, value.displayName || null, value.gender || "unspecified", value.avatarUrl || null, value.about || null, value.governorate || null, value.chatBackground || "#F4F8F7", value.voiceGender || "female").run(); return trpcResult(value, origin); }
         if (path === "agent.chat") { const value = input || {}; const message = typeof value.message === "string" ? value.message.trim() : ""; if (!message || message.length > 6000) return trpcError("الرسالة مطلوبة وبحد أقصى 6000 حرف", 400, origin); const mode = value.mode === "pro-max" ? "برو ماكس" : value.mode === "pro" ? "برو" : "طبيعي وسريع"; return trpcResult(await runChat(message, mode, user, env), origin); }
-        if (path === "agent.generate") { const value = input || {}; if (value.kind === "video") return trpcError("لا يوجد مزود فيديو صالح حاليًا. لم يتم إنشاء ملف وهمي.", 503, origin); if (value.kind !== "image" || typeof value.prompt !== "string" || value.prompt.trim().length < 3) return trpcError("نوع الوسائط أو الوصف غير صالح", 400, origin); return trpcResult(await generateOpenImage(value.prompt.trim(), env), origin); }
+        if (path === "agent.generate") { const value = input || {}; if (typeof value.prompt !== "string" || value.prompt.trim().length < 3) return trpcError("نوع الوسائط أو الوصف غير صالح", 400, origin); if (value.kind === "video") return trpcResult(await submitWanVideo(value.prompt.trim(), env), origin); if (value.kind !== "image") return trpcError("نوع الوسائط غير صالح", 400, origin); return trpcResult(await generateOpenImage(value.prompt.trim(), env), origin); }
+        if (path === "agent.mediaJob") { const value = input || {}; if (typeof value.jobId !== "string" || value.jobId.length < 8) return trpcError("رقم المهمة غير صالح", 400, origin); return trpcResult(await pollWanVideo(value.jobId, env), origin); }
         if (path === "agent.music") return trpcError("لا يوجد مزود موسيقى صالح حاليًا. لم يتم إنشاء ملف وهمي.", 503, origin);
         return trpcError("المسار غير مدعوم بعد على Cloudflare", 404, origin);
       } catch (error) { return trpcError(error instanceof Error ? error.message : "تعذر تنفيذ الطلب", 500, origin); }

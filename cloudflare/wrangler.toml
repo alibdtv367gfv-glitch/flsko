@@ -6,6 +6,7 @@ account_id = "3e2a7a8b3166f53a66f0afaf91d0fbe9"
 
 [vars]
 FLSKO_HF_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
+FLSKO_WAN_SPACE = "https://wan-ai-wan2-1.hf.space"
 
 [[d1_databases]]
 binding = "DB"
