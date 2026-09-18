@@ -8,5 +8,9 @@ describe("web authentication refresh", () => {
     expect(source).toContain("Cache without notifying subscribers");
     expect(source).toContain("Persist silently; notifying here would recursively trigger fetchUser.");
     expect(source).not.toContain("await Auth.setUserInfo(userInfo);");
+    const callback = readFileSync(resolve(process.cwd(), "app/oauth/callback.tsx"), "utf8");
+    expect(callback).toContain("handledRef.current");
+    expect(callback).toContain("notify: false");
+    expect(callback).toContain("Auth.notifyAuthChanges();");
   });
 });

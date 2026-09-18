@@ -17,7 +17,7 @@ export function subscribeAuthChanges(listener: () => void) {
   authListeners.add(listener);
   return () => authListeners.delete(listener);
 }
-function notifyAuthChanges() { authListeners.forEach((listener) => listener()); }
+export function notifyAuthChanges() { authListeners.forEach((listener) => listener()); }
 
 export async function getSessionToken(): Promise<string | null> {
   try {
@@ -39,11 +39,11 @@ export async function getSessionToken(): Promise<string | null> {
   }
 }
 
-export async function setSessionToken(token: string): Promise<void> {
+export async function setSessionToken(token: string, options: { notify?: boolean } = {}): Promise<void> {
   try {
     if (Platform.OS === "web") {
       window.localStorage.setItem(SESSION_TOKEN_KEY, token);
-      notifyAuthChanges();
+      if (options.notify !== false) notifyAuthChanges();
       return;
     }
 
@@ -99,7 +99,7 @@ export async function getUserInfo(): Promise<User | null> {
   }
 }
 
-export async function setUserInfo(user: User): Promise<void> {
+export async function setUserInfo(user: User, options: { notify?: boolean } = {}): Promise<void> {
   try {
     console.log("[Auth] Setting user info...", user);
 
@@ -107,13 +107,13 @@ export async function setUserInfo(user: User): Promise<void> {
       // Use localStorage for web
       window.localStorage.setItem(USER_INFO_KEY, JSON.stringify(user));
       console.log("[Auth] User info stored in localStorage successfully");
-      notifyAuthChanges();
+      if (options.notify !== false) notifyAuthChanges();
       return;
     }
 
     // Use SecureStore for native
     await SecureStore.setItemAsync(USER_INFO_KEY, JSON.stringify(user));
-    notifyAuthChanges();
+    if (options.notify !== false) notifyAuthChanges();
     console.log("[Auth] User info stored in SecureStore successfully");
   } catch (error) {
     console.error("[Auth] Failed to set user info:", error);

@@ -3,7 +3,7 @@ import * as Api from "@/lib/_core/api";
 import * as Auth from "@/lib/_core/auth";
 import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -18,9 +18,12 @@ export default function OAuthCallback() {
   }>();
   const [status, setStatus] = useState<"processing" | "success" | "error">("processing");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const handledRef = useRef(false);
 
   useEffect(() => {
     const handleCallback = async () => {
+      if (handledRef.current) return;
+      handledRef.current = true;
       console.log("[OAuth] Callback handler triggered");
       console.log("[OAuth] Params received:", {
         code: params.code,
@@ -33,7 +36,7 @@ export default function OAuthCallback() {
         // Check for sessionToken in params first (web OAuth callback from server redirect)
         if (params.sessionToken) {
           console.log("[OAuth] Session token found in params (web callback)");
-          await Auth.setSessionToken(params.sessionToken);
+          await Auth.setSessionToken(params.sessionToken, { notify: false });
 
           // Decode and store user info if available
           if (params.user) {
@@ -56,13 +59,14 @@ export default function OAuthCallback() {
                 role: userData.role === "admin" ? "admin" : "user",
                 lastSignedIn: new Date(userData.lastSignedIn || Date.now()),
               };
-              await Auth.setUserInfo(userInfo);
+              await Auth.setUserInfo(userInfo, { notify: false });
               console.log("[OAuth] User info stored:", userInfo);
             } catch (err) {
               console.error("[OAuth] Failed to parse user data:", err);
             }
           }
 
+          Auth.notifyAuthChanges();
           setStatus("success");
           console.log("[OAuth] Web authentication successful, redirecting to home...");
           setTimeout(() => {
@@ -156,10 +160,11 @@ export default function OAuthCallback() {
         // If we have sessionToken directly from URL, use it
         if (sessionToken) {
           console.log("[OAuth] Session token found in URL, storing...");
-          await Auth.setSessionToken(sessionToken);
+          await Auth.setSessionToken(sessionToken, { notify: false });
           console.log("[OAuth] Session token stored successfully");
           // User info is already in the OAuth callback response
           // No need to fetch from API
+          Auth.notifyAuthChanges();
           setStatus("success");
           console.log("[OAuth] Redirecting to home...");
           setTimeout(() => {
@@ -193,7 +198,7 @@ export default function OAuthCallback() {
         if (result.sessionToken) {
           console.log("[OAuth] Session token received, storing...");
           // Store session token
-          await Auth.setSessionToken(result.sessionToken);
+          await Auth.setSessionToken(result.sessionToken, { notify: false });
           console.log("[OAuth] Session token stored successfully");
 
           // Store user info if available
@@ -207,12 +212,13 @@ export default function OAuthCallback() {
               loginMethod: result.user.loginMethod,
               lastSignedIn: new Date(result.user.lastSignedIn || Date.now()),
             };
-            await Auth.setUserInfo(userInfo);
+            await Auth.setUserInfo(userInfo, { notify: false });
             console.log("[OAuth] User info stored:", userInfo);
           } else {
             console.log("[OAuth] No user data in result");
           }
 
+          Auth.notifyAuthChanges();
           setStatus("success");
           console.log("[OAuth] Authentication successful, redirecting to home...");
 
