@@ -71,7 +71,7 @@ const encodeState = (value: string) => {
  */
 export const getRedirectUri = () => {
   if (ReactNative.Platform.OS === "web") {
-    return `${getApiBaseUrl()}/api/oauth/callback`;
+    return `${getApiBaseUrl()}/api/google/callback`;
   } else {
     return Linking.createURL("/oauth/callback", {
       scheme: env.deepLinkScheme,

@@ -1,4 +1,5 @@
 import { Image, Linking, Pressable, ScrollView, Text, View } from "react-native";
+import { Link } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
@@ -41,7 +42,11 @@ export default function DownloadScreen() {
             </View>
           ))}
         </View>
-        <Text className="mt-8 text-center text-xs text-muted">© 2026 علي يوسف · Flsko</Text>
+        <View className="mt-8 flex-row justify-center gap-5">
+          <Link href="/privacy" asChild><Pressable><Text className="text-xs font-bold text-primary">سياسة الخصوصية</Text></Pressable></Link>
+          <Link href="/terms" asChild><Pressable><Text className="text-xs font-bold text-primary">شروط الاستخدام</Text></Pressable></Link>
+        </View>
+        <Text className="mt-4 text-center text-xs text-muted">© 2026 علي يوسف · Flsko</Text>
       </ScrollView>
     </ScreenContainer>
   );

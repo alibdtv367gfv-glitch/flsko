@@ -8,7 +8,7 @@ export default function PrivacyScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 36 }}>
         <Text className="text-sm font-semibold text-primary">Flsko</Text>
         <Text className="mt-2 text-3xl font-black text-foreground">سياسة الخصوصية</Text>
-        <Text className="mt-2 text-sm leading-6 text-muted">نسخة أولية للمراجعة قبل النشر العام — آخر تحديث: 14 أيلول 2026.</Text>
+        <Text className="mt-2 text-sm leading-6 text-muted">آخر تحديث: 18 أيلول 2026 · مالك الخدمة: علي يوسف.</Text>
 
         <View className="mt-7 gap-5">
           <View>
@@ -29,8 +29,9 @@ export default function PrivacyScreen() {
           </View>
           <View>
             <Text className="text-lg font-bold text-foreground">قبل الإطلاق العام</Text>
-            <Text className="mt-2 text-sm leading-7 text-muted">يجب نشر هذه السياسة على رابط عام، وتعبئة نموذج Data safety في Google Play، وإضافة قناة دعم وحذف حساب واضحة، ثم تحديث هذه الصفحة ببيانات الجهة المالكة ومدة الاحتفاظ ومعلومات التواصل الرسمية.</Text>
+            <Text className="mt-2 text-sm leading-7 text-muted">هذه الصفحة منشورة للاطلاع قبل الاستخدام. سيُستكمل نموذج Data safety في Google Play وتُضاف قناة دعم وحذف حساب واضحة قبل الإطلاق العام، مع تحديث السياسة عند تغير مزودي المعالجة أو مدد الاحتفاظ.</Text>
           </View>
+          <View><Text className="text-lg font-bold text-foreground">حقوقك وطلبات الحذف</Text><Text className="mt-2 text-sm leading-7 text-muted">يمكنك حذف ذكرياتك من مساحة الذاكرة داخل التطبيق. لطلب حذف الحساب والبيانات المرتبطة به، استخدم قناة الاقتراحات أو وسيلة التواصل الرسمية المنشورة مع الإصدار، وسنراجع الطلب وفق المتطلبات القانونية والقدرة التقنية المتاحة.</Text></View>
         </View>
       </ScrollView>
     </ScreenContainer>
