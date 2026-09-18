@@ -24,7 +24,8 @@ export function useAuth(options?: UseAuthOptions) {
         const params = new URLSearchParams(window.location.search);
         const callbackToken = params.get("sessionToken");
         if (callbackToken) {
-          await Auth.setSessionToken(callbackToken);
+          // Persist silently; notifying here would recursively trigger fetchUser.
+          window.localStorage.setItem("app_session_token", callbackToken);
           window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
         }
         console.log("[useAuth] Web platform: fetching user from API...");
@@ -43,12 +44,14 @@ export function useAuth(options?: UseAuthOptions) {
           };
           setUser(userInfo);
           // Cache user info in localStorage for faster subsequent loads
-          await Auth.setUserInfo(userInfo);
+          // Cache without notifying subscribers: this function is itself the
+          // auth refresh subscriber, so notifying here would recurse forever.
+          window.localStorage.setItem("manus-runtime-user-info", JSON.stringify(userInfo));
           console.log("[useAuth] Web user set from API:", userInfo);
         } else {
           console.log("[useAuth] Web: No authenticated user from API");
           setUser(null);
-          await Auth.clearUserInfo();
+          window.localStorage.removeItem("manus-runtime-user-info");
         }
         return;
       }
