@@ -5,12 +5,14 @@ import { resolve } from "node:path";
 describe("web authentication refresh", () => {
   it("caches web auth refresh silently instead of notifying the auth listener recursively", () => {
     const source = readFileSync(resolve(process.cwd(), "hooks/use-auth.ts"), "utf8");
-    expect(source).toContain("Cache without notifying subscribers");
-    expect(source).toContain("Persist silently; notifying here would recursively trigger fetchUser.");
+    expect(source).toContain("Persist silently; callback owns the single auth notification.");
     expect(source).not.toContain("await Auth.setUserInfo(userInfo);");
     const callback = readFileSync(resolve(process.cwd(), "app/oauth/callback.tsx"), "utf8");
     expect(callback).toContain("handledRef.current");
     expect(callback).toContain("notify: false");
     expect(callback).toContain("Auth.notifyAuthChanges();");
+    expect(source).toContain("AUTH_REFRESH_COOLDOWN_MS = 3000");
+    expect(source).toContain("inFlightFetch");
+    expect(source).toContain("if (inFlightFetch) return inFlightFetch;");
   });
 });
