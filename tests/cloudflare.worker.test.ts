@@ -20,4 +20,13 @@ describe("deployed Flsko Cloudflare Worker", () => {
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toMatchObject({ error: "تسجيل الدخول مطلوب" });
   }, 20_000);
+
+  it("exposes safe router health metadata without authentication", async () => {
+    const response = await fetch(`${baseUrl}/api/trpc/media.status`);
+    expect(response.ok).toBe(true);
+    const body = await response.json() as Array<{ result?: { data?: { json?: { router?: { mode?: string; persistedHealth?: unknown[] } } } } }>;
+    const router = body[0]?.result?.data?.json?.router;
+    expect(router?.mode).toBe("safe-fallback");
+    expect(Array.isArray(router?.persistedHealth)).toBe(true);
+  }, 20_000);
 });

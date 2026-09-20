@@ -48,6 +48,24 @@ CREATE TABLE IF NOT EXISTS profiles (
   voice_gender TEXT NOT NULL DEFAULT 'female',
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS provider_health (
+  provider_id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  failures INTEGER NOT NULL DEFAULT 0,
+  last_failure_at INTEGER,
+  disabled_until INTEGER,
+  last_error TEXT,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS provider_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  error TEXT,
+  created_at INTEGER NOT NULL
+);
 CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS memories_user_idx ON memories(user_id);
 CREATE INDEX IF NOT EXISTS messages_user_idx ON messages(user_id);
+CREATE INDEX IF NOT EXISTS provider_events_provider_idx ON provider_events(provider_id, created_at);

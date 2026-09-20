@@ -22,6 +22,11 @@ export type RouterResult<T> = {
   attempted: string[];
 };
 
+export type RouterHooks<T> = {
+  onSuccess?: (provider: RouterProvider<T>) => void | Promise<void>;
+  onFailure?: (provider: RouterProvider<T>, error: unknown) => void | Promise<void>;
+};
+
 const FAILURE_COOLDOWN_MS = 60_000;
 const health = new Map<string, ProviderHealth>();
 
@@ -54,7 +59,7 @@ export function markProviderFailure(provider: Pick<RouterProvider<unknown>, "id"
   state.lastError = error instanceof Error ? error.message.slice(0, 180) : String(error).slice(0, 180);
 }
 
-export async function routeWithFallback<T>(providers: RouterProvider<T>[], now = Date.now()): Promise<RouterResult<T>> {
+export async function routeWithFallback<T>(providers: RouterProvider<T>[], now = Date.now(), hooks: RouterHooks<T> = {}): Promise<RouterResult<T>> {
   const ordered = [...providers].sort((a, b) => a.priority - b.priority);
   const attempted: string[] = [];
   let lastError: unknown = new Error("لم يتوفر أي مزود صالح");
@@ -65,10 +70,12 @@ export async function routeWithFallback<T>(providers: RouterProvider<T>[], now =
     try {
       const value = await provider.execute();
       markProviderSuccess(provider);
+      await hooks.onSuccess?.(provider);
       return { value, provider: provider.id, attempted };
     } catch (error) {
       lastError = error;
       markProviderFailure(provider, error, now);
+      await hooks.onFailure?.(provider, error);
     }
   }
 

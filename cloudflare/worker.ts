@@ -22,6 +22,32 @@ export interface Env {
 type WorkerHandler = { fetch: (request: Request, env: Env) => Promise<Response> };
 const encoder = new TextEncoder();
 const SYSTEM_PROMPT = "أنت فلسقوا، وكيل عربي أولًا يفهم السوريين بتنوعهم دون تنميط. أجب بلهجة المستخدم قدر الإمكان، وكن دقيقًا وصريحًا بشأن حدود معرفتك. إذا سأل المستخدم عن اسمك فقل: اسمي فلسقوا.";
+let routerTablesReady: Promise<void> | null = null;
+
+async function ensureRouterTables(env: Env) {
+  if (!routerTablesReady) {
+    routerTablesReady = env.DB.prepare("CREATE TABLE IF NOT EXISTS provider_health (provider_id TEXT PRIMARY KEY, kind TEXT NOT NULL, failures INTEGER NOT NULL DEFAULT 0, last_failure_at INTEGER, disabled_until INTEGER, last_error TEXT, updated_at INTEGER NOT NULL)").run()
+      .then(() => env.DB.prepare("CREATE TABLE IF NOT EXISTS provider_events (id INTEGER PRIMARY KEY AUTOINCREMENT, provider_id TEXT NOT NULL, kind TEXT NOT NULL, outcome TEXT NOT NULL, error TEXT, created_at INTEGER NOT NULL)").run())
+      .then(() => undefined);
+  }
+  await routerTablesReady;
+}
+
+function routerHooks(env: Env) {
+  return {
+    onSuccess: async (provider: { id: string; kind: string }) => {
+      await ensureRouterTables(env);
+      await env.DB.prepare("INSERT INTO provider_health(provider_id,kind,failures,last_failure_at,disabled_until,last_error,updated_at) VALUES(?,?,0,NULL,NULL,NULL,?) ON CONFLICT(provider_id) DO UPDATE SET kind=excluded.kind,failures=0,last_failure_at=NULL,disabled_until=NULL,last_error=NULL,updated_at=excluded.updated_at").bind(provider.id, provider.kind, Date.now()).run();
+      await env.DB.prepare("INSERT INTO provider_events(provider_id,kind,outcome,error,created_at) VALUES(?,?,?,NULL,?)").bind(provider.id, provider.kind, "success", Date.now()).run();
+    },
+    onFailure: async (provider: { id: string; kind: string }, error: unknown) => {
+      await ensureRouterTables(env);
+      const message = error instanceof Error ? error.message.slice(0, 180) : String(error).slice(0, 180);
+      await env.DB.prepare("INSERT INTO provider_health(provider_id,kind,failures,last_failure_at,disabled_until,last_error,updated_at) VALUES(?,?,1,?,?,?,?) ON CONFLICT(provider_id) DO UPDATE SET kind=excluded.kind,failures=provider_health.failures+1,last_failure_at=excluded.last_failure_at,disabled_until=excluded.disabled_until,last_error=excluded.last_error,updated_at=excluded.updated_at").bind(provider.id, provider.kind, Date.now(), Date.now() + 60000, message, Date.now()).run();
+      await env.DB.prepare("INSERT INTO provider_events(provider_id,kind,outcome,error,created_at) VALUES(?,?,?,?,?)").bind(provider.id, provider.kind, "failure", message, Date.now()).run();
+    },
+  };
+}
 
 function corsHeaders(origin: string | null): HeadersInit {
   return { "Access-Control-Allow-Origin": origin || "*", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization", "Access-Control-Allow-Credentials": "true", "Access-Control-Max-Age": "86400" };
@@ -53,10 +79,11 @@ async function googleUser(accessToken: string) { const response = await fetch("h
 function trpcResult(data: unknown, origin: string | null) { return json([{ result: { data: { json: data } } }], 200, origin); }
 function trpcError(message: string, status: number, origin: string | null) { return json([{ error: { json: { message, data: { code: status === 401 ? "UNAUTHORIZED" : "BAD_REQUEST", httpStatus: status } } } }], status, origin); }
 function layer(id: string, name: string, kind: string, priority: number, available: boolean, reason: string) { return { id, name, kind, priority, available, reason }; }
-function mediaStatus(env?: Env) {
+async function mediaStatus(env?: Env) {
+  const persistedHealth = env ? await env.DB.prepare("SELECT provider_id as id, kind, failures, last_failure_at as lastFailureAt, disabled_until as disabledUntil, last_error as lastError, updated_at as updatedAt FROM provider_health ORDER BY kind, provider_id").all().catch(() => ({ results: [] })) : { results: [] };
   return {
     policy: "automatic-best-available",
-    router: { mode: "safe-fallback", failureCooldownMs: 60000, health: providerHealthSnapshot() },
+    router: { mode: "safe-fallback", failureCooldownMs: 60000, health: providerHealthSnapshot(), persistedHealth: persistedHealth.results },
     image: { selected: env?.FLSKO_IMAGE_PROVIDER_URL ? "configured-open-provider" : "pollinations-flux", layers: [layer("gemini-image", "Gemini Image", "cloud-closed", 1, false, "حصة Gemini الحالية أعادت 429"), layer("configured-open-provider", "مزود صور مفتوح مخصص", "cloud-open", 2, Boolean(env?.FLSKO_IMAGE_PROVIDER_URL), env?.FLSKO_IMAGE_PROVIDER_URL ? "مهيأ" : "لم تتم تهيئته"), layer("pollinations-flux", "Pollinations Flux", "cloud-open", 3, true, "تم اختباره وأعاد JPEG فعليًا"), layer("mobile-sd-lcm", "Stable Diffusion LCM محلي", "on-device", 4, false, "يحتاج حزمة نموذج Android أصلية ولم تُضمّن بعد")] },
     video: { selected: env?.FLSKO_WAN_SPACE ? "wan-gradio" : null, layers: [layer("gemini-veo", "Gemini/Veo", "cloud-closed", 1, false, "حصة Gemini الحالية أعادت 429"), layer("wan-gradio", "Wan 2.1 Gradio Space", "cloud-open-queue", 2, Boolean(env?.FLSKO_WAN_SPACE), env?.FLSKO_WAN_SPACE ? "مهيأ بطابور Gradio" : "لم تتم تهيئته"), layer("wan-provider", "Wan 2.x عبر مزود", "cloud-open", 3, Boolean(env?.FLSKO_VIDEO_PROVIDER_URL), env?.FLSKO_VIDEO_PROVIDER_URL ? "مهيأ" : "لا يوجد عنوان مزود"), layer("cogvideox-provider", "CogVideoX عبر مزود", "cloud-open", 4, false, "لا يوجد عنوان مزود مستقل"), layer("rife-mobile", "RIFE محلي", "on-device", 5, false, "يحتاج محرك صور محليًا ومدخلات إطارات")] },
     music: { selected: env?.FLSKO_VODER_API_URL ? "voder" : null, layers: [layer("gemini-lyria", "Gemini/Lyria", "cloud-closed", 1, false, "حصة Gemini الحالية أعادت 429"), layer("ace-step-provider", "ACE-Step عبر مزود", "cloud-open", 2, Boolean(env?.FLSKO_MUSIC_PROVIDER_URL), env?.FLSKO_MUSIC_PROVIDER_URL ? "مهيأ" : "لا يوجد عنوان مزود"), layer("voder", "VODER / ACE-Step", "self-hosted-open", 3, Boolean(env?.FLSKO_VODER_API_URL), env?.FLSKO_VODER_API_URL ? "مهيأ" : "يحتاج خادم VODER مستقلًا؛ ليس مناسبًا لهاتف عادي"), layer("musicgen-mobile", "MusicGen Small محلي", "on-device", 4, false, "يحتاج نموذج INT8 وتكامل Android أصلي"), layer("audioldm-provider", "AudioLDM عبر مزود", "cloud-open", 5, false, "لا يوجد عنوان مزود مستقل")] },
@@ -79,7 +106,7 @@ async function generateOpenImage(prompt: string, env: Env) {
       if (!response.ok) throw new Error(`Pollinations image provider failed: ${response.status}`);
       return { url, provider: "open-source", status: "completed" as const, message: "تم إنشاء الصورة عبر نموذج مفتوح المصدر." };
     } },
-  ]);
+  ], Date.now(), routerHooks(env));
   return { ...result.value, provider: result.provider, attempted: result.attempted };
 }
 async function submitWanVideo(prompt: string, env: Env) {
@@ -89,7 +116,7 @@ async function submitWanVideo(prompt: string, env: Env) {
     const payload = await response.json().catch(() => ({})) as { event_id?: string };
     if (!response.ok || !payload.event_id) throw new Error(`Wan Gradio queue failed: ${response.status}`);
     return { status: "queued" as const, provider: "wan-gradio", jobId: payload.event_id, message: "تم إرسال الفيديو إلى طابور Wan المفتوح. سيحتاج وقتًا للمعالجة بسبب موارد Space المجانية." };
-  } }]);
+  } }], Date.now(), routerHooks(env));
   return { ...result.value, provider: result.provider, attempted: result.attempted };
 }
 async function pollWanVideo(jobId: string, env: Env) {
@@ -122,7 +149,7 @@ async function runChat(message: string, mode: string, user: Record<string, unkno
     const text = payload.choices?.[0]?.message?.content;
     if (typeof text !== "string" || !text.trim()) throw new Error("لم يصل رد نصي من النموذج");
     return text.trim();
-  } }]);
+  } }], Date.now(), routerHooks(env));
   const text = routed.value;
   await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "user", message).run();
   await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "assistant", text.trim()).run();
@@ -143,7 +170,7 @@ export default {
       try {
         const input = await trpcInput(request, url) as Record<string, unknown> | null;
         const user = await currentUser(request, env);
-        if (path === "system.health" || path === "agent.status" || path === "media.status") return trpcResult(path === "system.health" ? { status: "ok", service: "flsko" } : path === "media.status" ? mediaStatus(env) : { name: "Flsko", orchestration: "automatic", openSourceSearch: true, userSeesModels: false, privacy: "cloud-only-with-consent" }, origin);
+        if (path === "system.health" || path === "agent.status" || path === "media.status") return trpcResult(path === "system.health" ? { status: "ok", service: "flsko" } : path === "media.status" ? await mediaStatus(env) : { name: "Flsko", orchestration: "automatic", openSourceSearch: true, userSeesModels: false, privacy: "cloud-only-with-consent" }, origin);
         if (path === "auth.me") return trpcResult(user, origin);
         if (path === "auth.logout") { const token = getBearer(request) || getCookie(request, "app_session_id"); if (token) await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(await sha256(token)).run(); return trpcResult({ success: true }, origin); }
         if (!user) return trpcError("تسجيل الدخول مطلوب", 401, origin);
