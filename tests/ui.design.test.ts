@@ -44,4 +44,12 @@ describe("Flsko visual identity", () => {
     expect(source).toContain("AsyncStorage.getItem(THEME_STORAGE_KEY)");
     expect(source).toContain("stored === \"light\" || stored === \"dark\"");
   });
+
+  it("explains the direct browser OAuth return flow", () => {
+    const layout = readFileSync(resolve(process.cwd(), "app/_layout.tsx"), "utf8");
+    const oauth = readFileSync(resolve(process.cwd(), "constants/oauth.ts"), "utf8");
+    expect(layout).toContain("سيفتح Google في المتصفح");
+    expect(oauth).toContain("await Linking.openURL(loginUrl)");
+    expect(oauth).not.toContain("WebBrowser.openAuthSessionAsync");
+  });
 });

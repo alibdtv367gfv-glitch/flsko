@@ -1,5 +1,4 @@
 import * as Linking from "expo-linking";
-import * as WebBrowser from "expo-web-browser";
 import * as ReactNative from "react-native";
 
 // Extract scheme from bundle ID (last segment timestamp, prefixed with "manus")
@@ -124,8 +123,11 @@ export async function startOAuthLogin(): Promise<string | null> {
   }
 
   try {
-    const redirectUri = getRedirectUri();
-    await WebBrowser.openAuthSessionAsync(loginUrl, redirectUri);
+    // Android: open Google in the system browser. The Worker callback then
+    // redirects to manusapp://oauth/callback and Android reopens Flsko.
+    // This avoids the WebBrowser auth-session wrapper that was returning 403
+    // before Google rendered on some devices.
+    await Linking.openURL(loginUrl);
   } catch (error) {
     console.error("[OAuth] Failed to open login URL:", error);
     throw new Error("تعذر فتح صفحة تسجيل الدخول. تحقق من اتصال الإنترنت وحاول مرة أخرى.");
