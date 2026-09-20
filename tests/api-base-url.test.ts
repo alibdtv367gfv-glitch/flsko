@@ -19,5 +19,7 @@ describe("production API configuration", () => {
     expect(source).toContain("PRODUCTION_API_BASE_URL");
     expect(source).toContain("isPreviewApi");
     expect(source).toContain("!isPreviewApi");
+    expect(source).toContain("normalizedConfiguredApi === PRODUCTION_API_BASE_URL");
+    expect(source).toContain("Starting production login");
   });
 });

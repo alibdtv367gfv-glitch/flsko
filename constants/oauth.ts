@@ -10,7 +10,8 @@ const schemeFromBundleId = `manus${timestamp}`;
 
 const PRODUCTION_API_BASE_URL = "https://flsko-api.flsko.workers.dev";
 const configuredApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim() ?? "";
-const isPreviewApi = /(^|\/\/)(3000-|localhost(?::|\/)|127\.0\.0\.1)/i.test(configuredApiBaseUrl);
+const normalizedConfiguredApi = configuredApiBaseUrl.replace(/\/$/, "");
+const isPreviewApi = /(^|\/\/)(3000-|8081-|localhost(?::|\/)|127\.0\.0\.1)/i.test(normalizedConfiguredApi);
 
 const env = {
   portal: process.env.EXPO_PUBLIC_OAUTH_PORTAL_URL ?? "",
@@ -19,7 +20,9 @@ const env = {
   ownerId: process.env.EXPO_PUBLIC_OWNER_OPEN_ID ?? "",
   ownerName: process.env.EXPO_PUBLIC_OWNER_NAME ?? "",
   // Never allow a stale Manus/Metro API value to ship in the client bundle.
-  apiBaseUrl: configuredApiBaseUrl && !isPreviewApi ? configuredApiBaseUrl : PRODUCTION_API_BASE_URL,
+  // OAuth must always start at the deployed Worker. A stale preview/API value can
+  // return 403 before Google is opened, so do not trust arbitrary build-time URLs.
+  apiBaseUrl: normalizedConfiguredApi === PRODUCTION_API_BASE_URL && !isPreviewApi ? normalizedConfiguredApi : PRODUCTION_API_BASE_URL,
   deepLinkScheme: schemeFromBundleId,
 };
 
@@ -37,9 +40,7 @@ export const API_BASE_URL = env.apiBaseUrl;
  */
 export function getApiBaseUrl(): string {
   // If API_BASE_URL is set, use it
-  if (API_BASE_URL) {
-    return API_BASE_URL.replace(/\/$/, "");
-  }
+  if (API_BASE_URL) return PRODUCTION_API_BASE_URL;
 
   // On web, derive from current hostname by replacing port 8081 with 3000
   if (ReactNative.Platform.OS === "web" && typeof window !== "undefined" && window.location) {
@@ -112,6 +113,7 @@ export const getLoginUrl = () => {
  */
 export async function startOAuthLogin(): Promise<string | null> {
   const loginUrl = getLoginUrl();
+  console.log("[OAuth] Starting production login", { loginUrl, platform: ReactNative.Platform.OS, redirectUri: getRedirectUri() });
 
   if (ReactNative.Platform.OS === "web") {
     // On web, just redirect
