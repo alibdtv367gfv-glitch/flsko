@@ -15,4 +15,11 @@ describe("web authentication refresh", () => {
     expect(source).toContain("inFlightFetch");
     expect(source).toContain("if (inFlightFetch) return inFlightFetch;");
   });
+
+  it("checks for a stored web session before calling auth.me", () => {
+    const source = readFileSync(resolve(process.cwd(), "hooks/use-auth.ts"), "utf8");
+    expect(source).toContain("const sessionToken = await Auth.getSessionToken();");
+    expect(source).toContain("if (!sessionToken) {");
+    expect(source).toContain("sharedUser = null;");
+  });
 });

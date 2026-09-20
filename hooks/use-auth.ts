@@ -42,6 +42,12 @@ async function fetchUserOnce(force = false): Promise<Auth.User | null> {
           window.localStorage.setItem("app_session_token", callbackToken);
           window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
         }
+        const sessionToken = await Auth.getSessionToken();
+        if (!sessionToken) {
+          sharedUser = null;
+          sharedError = null;
+          return null;
+        }
         const apiUser = await Api.getMe();
         sharedUser = userFromApi(apiUser);
         sharedError = null;
