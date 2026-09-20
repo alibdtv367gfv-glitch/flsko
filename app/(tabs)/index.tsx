@@ -1,5 +1,8 @@
 import { router } from "expo-router";
-import { Alert, Image, Pressable, ScrollView, Text, View } from "react-native";
+import { useMemo } from "react";
+import { Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import * as Haptics from "expo-haptics";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
@@ -7,20 +10,26 @@ import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
 import { startOAuthLogin } from "@/constants/oauth";
 
-function ActionCard({ icon, title, subtitle, onPress }: { icon: string; title: string; subtitle: string; onPress: () => void }) {
+function pressFeedback() {
+  if (Platform.OS !== "web") void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+}
+
+function ActionCard({ icon, title, subtitle, tone, onPress }: { icon: keyof typeof MaterialIcons.glyphMap; title: string; subtitle: string; tone: string; onPress: () => void }) {
   const colors = useColors();
   return (
     <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        { backgroundColor: colors.surface, borderColor: colors.border },
-        pressed && { transform: [{ scale: 0.98 }], opacity: 0.88 },
-      ]}
-      className="flex-1 rounded-3xl border p-4"
+      accessibilityRole="button"
+      onPress={() => { pressFeedback(); onPress(); }}
+      style={({ pressed }) => [styles.actionCard, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && styles.pressed]}
     >
-      <Text className="mb-3 text-2xl">{icon}</Text>
-      <Text className="text-base font-bold text-foreground">{title}</Text>
-      <Text className="mt-1 text-xs leading-5 text-muted">{subtitle}</Text>
+      <View style={[styles.actionIcon, { backgroundColor: `${tone}18` }]}>
+        <MaterialIcons name={icon} size={21} color={tone} />
+      </View>
+      <Text style={[styles.actionTitle, { color: colors.foreground }]}>{title}</Text>
+      <Text style={[styles.actionSubtitle, { color: colors.muted }]}>{subtitle}</Text>
+      <View style={styles.actionArrow}>
+        <MaterialIcons name="arrow-forward" size={16} color={colors.primary} />
+      </View>
     </Pressable>
   );
 }
@@ -29,101 +38,144 @@ export default function HomeScreen() {
   const colors = useColors();
   const { user, loading, isAuthenticated } = useAuth();
   const status = trpc.agent.status.useQuery();
+  const orchestrationReady = status.data?.orchestration === "automatic";
+  const greeting = useMemo(() => user?.name ? `أهلًا ${user.name.split(" ")[0]}` : "أهلًا بك", [user?.name]);
+
   const handleLogin = async () => {
-    try { await startOAuthLogin(); } catch { Alert.alert("تعذر فتح تسجيل الدخول", "تحقق من اتصال الإنترنت وحاول مرة أخرى."); }
+    pressFeedback();
+    try {
+      await startOAuthLogin();
+    } catch {
+      Alert.alert("تعذر فتح تسجيل الدخول", "تحقق من اتصال الإنترنت وحاول مرة أخرى.");
+    }
   };
 
   return (
-    <ScreenContainer className="px-5 pt-4">
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 30 }}>
-        <View className="flex-row items-center justify-between">
-          <View className="flex-1">
-            <Text className="text-sm font-semibold text-primary">Flsko / 01</Text>
-            <Text className="mt-1 text-3xl font-bold text-foreground">أهلًا بك</Text>
-          </View>
-          {!loading && !isAuthenticated && <Pressable onPress={() => void handleLogin()} style={({ pressed }) => [{ backgroundColor: colors.primary }, pressed && { opacity: 0.8 }]} className="rounded-full px-4 py-3"><Text className="text-xs font-black text-background">دخول / تسجيل</Text></Pressable>}
-          <Image source={require("../../assets/images/icon.png")} style={{ width: 64, height: 64 }} className="rounded-2xl" resizeMode="contain" />
-        </View>
-
-        <View className="mt-6 rounded-[28px] bg-primary p-5">
-          <Text className="text-sm font-semibold text-background/80">الوكيل السوري الذكي</Text>
-          <Text className="mt-2 text-3xl font-black leading-10 text-background">فكرتك،{`\n`}بنسخة أذكى.</Text>
-          <Text className="mt-3 text-sm leading-6 text-background/80">
-            محادثة، صور وفيديو في مساحة سحابية واحدة، مع ذاكرة لا تعمل إلا بإذنك.
-          </Text>
-          <View className="mt-4 flex-row items-center gap-2">
-            <View className="h-2 w-2 rounded-full bg-background" />
-            <Text className="text-xs font-semibold text-background/90">
-              {status.data?.orchestration === "automatic" ? "اختيار تلقائي لأفضل نتيجة" : "المزودات قيد الفحص"}
-            </Text>
-          </View>
-        </View>
-
-        {isAuthenticated ? <>
-        <View className="mt-7 flex-row items-end justify-between">
-          <View>
-            <Text className="text-xl font-bold text-foreground">ابدأ من هنا</Text>
-            <Text className="mt-1 text-sm text-muted">أدواتك الأساسية في مكان واحد</Text>
-          </View>
-          <Text className="text-xs font-semibold text-primary">سحابي بالكامل</Text>
-        </View>
-
-        <View className="mt-4 flex-row gap-3">
-          <ActionCard icon="✦" title="صورة" subtitle="حوّل الوصف إلى صورة احترافية" onPress={() => router.push("/create")} />
-          <ActionCard icon="◉" title="فيديو" subtitle="حوّل فكرتك إلى مشهد قصير" onPress={() => router.push("/create?kind=video")} />
-        </View>
-        <View className="mt-3 flex-row gap-3">
-          <ActionCard icon="◌" title="احكِ مع Flsko" subtitle="يفهم العربية واللهجات السورية" onPress={() => router.push("/chat")} />
-          <ActionCard icon="⌁" title="ذاكرتي" subtitle="ما وافقتَ أن يتذكره فقط" onPress={() => router.push("/memory")} />
-        </View>
-        </> : <View className="mt-7 rounded-3xl border-2 border-primary bg-surface p-5">
-          <Text className="text-xl font-black text-foreground">سجّل دخولك للبدء</Text>
-          <Text className="mt-2 text-sm leading-6 text-muted">المحادثة وإنشاء الصور والفيديو والذاكرة السحابية متاحة بعد تسجيل الدخول الآمن.</Text>
-          <Pressable onPress={() => void handleLogin()} style={({ pressed }) => [{ backgroundColor: colors.primary }, pressed && { opacity: 0.8 }]} className="mt-5 rounded-2xl px-4 py-4"><Text className="text-center text-base font-black text-background">تسجيل الدخول الآن</Text></Pressable>
-          <Text className="mt-3 text-center text-xs text-muted">سيتم فتح صفحة الدخول الرسمية ثم تعود تلقائيًا إلى Flsko.</Text>
-        </View>}
-
-        <View className="mt-7 rounded-3xl border border-border bg-surface p-4">
-          <View className="flex-row items-center justify-between">
-            <Text className="text-base font-bold text-foreground">حسابك السحابي</Text>
-            <View className="rounded-full px-3 py-1" style={{ backgroundColor: isAuthenticated ? `${colors.success}20` : `${colors.warning}20` }}>
-              <Text className="text-xs font-bold" style={{ color: isAuthenticated ? colors.success : colors.warning }}>
-                {loading ? "جارٍ التحقق" : isAuthenticated ? "متصل" : "ضيف"}
-              </Text>
+    <ScreenContainer className="px-5 pt-3" containerClassName="bg-background">
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+        <View style={styles.topbar}>
+          <View style={styles.brandRow}>
+            <Image source={require("../../assets/images/icon.png")} style={styles.logo} resizeMode="contain" />
+            <View>
+              <Text style={[styles.brandName, { color: colors.foreground }]}>Flsko</Text>
+              <Text style={[styles.brandArabic, { color: colors.primary }]}>فلسقوا · وكيلك الذكي</Text>
             </View>
           </View>
-          <Text className="mt-2 text-sm leading-6 text-muted">
-            {isAuthenticated
-              ? `مرحبًا ${user?.name || "بك"}. ستتزامن ذاكرتك وملفاتك عبر أجهزتك.`
-              : "سجّل الدخول لحفظ المحادثات والذكريات والنتائج في مساحة سحابية آمنة."}
-          </Text>
+          {isAuthenticated ? (
+            <Pressable accessibilityLabel="فتح الملف الشخصي" onPress={() => { pressFeedback(); router.push("/memory"); }} style={({ pressed }) => [styles.avatar, { backgroundColor: `${colors.primary}18`, borderColor: `${colors.primary}40` }, pressed && styles.pressed]}>
+              <Text style={[styles.avatarText, { color: colors.primary }]}>{(user?.name || "ف").slice(0, 1).toUpperCase()}</Text>
+            </Pressable>
+          ) : <View style={[styles.liveDot, { backgroundColor: colors.success }]} />}
+        </View>
+
+        <View style={[styles.hero, { backgroundColor: colors.foreground }]}>
+          <View style={[styles.heroOrb, { backgroundColor: `${colors.primary}35` }]} />
+          <View style={styles.heroHeader}>
+            <View style={styles.statusPill}>
+              <View style={[styles.statusDot, { backgroundColor: colors.success }]} />
+              <Text style={styles.statusText}>{orchestrationReady ? "جاهز لمساعدتك" : "يجهّز أدواته"}</Text>
+            </View>
+            <MaterialIcons name="auto-awesome" size={20} color={colors.primary} />
+          </View>
+          <Text style={styles.heroGreeting}>{greeting}</Text>
+          <Text style={styles.heroTitle}>خلّي فكرتك{`\n`}تصير حقيقة.</Text>
+          <Text style={styles.heroBody}>احكِ، اكتب، أو ارفع ملفًا. فلسقوا يرتّب الخطوة التالية معك.</Text>
           {!isAuthenticated && (
-            <Pressable onPress={() => void startOAuthLogin()} style={({ pressed }) => [pressed && { opacity: 0.8 }]} className="mt-4 self-start rounded-full bg-foreground px-5 py-3">
-              <Text className="font-bold text-background">تسجيل الدخول</Text>
+            <Pressable accessibilityRole="button" onPress={handleLogin} style={({ pressed }) => [styles.heroButton, { backgroundColor: colors.primary }, pressed && styles.pressed]}>
+              <Text style={[styles.heroButtonText, { color: colors.background }]}>ابدأ بأمان</Text>
+              <MaterialIcons name="arrow-forward" size={18} color={colors.background} />
             </Pressable>
           )}
         </View>
 
-        <View className="mt-5 flex-row items-start gap-2 px-1">
-          <Text className="text-sm text-primary">⌁</Text>
-          <View className="flex-1">
-            <Text className="text-xs leading-5 text-muted">لا يقرأ Flsko حسابات خاصة ولا يجمع محتوى من الشبكات الاجتماعية تلقائيًا. أضف فقط روابط عامة تملك حق استخدامها وبموافقة واضحة.</Text>
-            <Pressable onPress={() => router.push("/privacy")} style={({ pressed }) => [pressed && { opacity: 0.7 }]} className="mt-2 self-start">
-              <Text className="text-xs font-bold text-primary">اقرأ سياسة الخصوصية</Text>
-            </Pressable>
+        <View style={styles.sectionHeader}>
+          <View>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>{isAuthenticated ? "ماذا ننجز اليوم؟" : "كل شيء يبدأ من هنا"}</Text>
+            <Text style={[styles.sectionSubtitle, { color: colors.muted }]}>أدوات واضحة، ونتيجة بلا تعقيد</Text>
+          </View>
+          <View style={[styles.cloudBadge, { backgroundColor: `${colors.primary}12` }]}>
+            <MaterialIcons name="cloud-done" size={16} color={colors.primary} />
+            <Text style={[styles.cloudText, { color: colors.primary }]}>سحابي</Text>
           </View>
         </View>
-        <Pressable onPress={() => router.push("/suggestions")} style={({ pressed }) => [pressed && { opacity: 0.75 }]} className="mt-5 rounded-2xl border border-primary bg-surface px-4 py-4">
-          <Text className="text-sm font-black text-primary">أضف اقتراحًا لتطوير Flsko</Text>
-          <Text className="mt-1 text-xs leading-5 text-muted">شارك فكرة مستقبلية — تصل للفريق من خلال الخادم دون كشف بريد المالك.</Text>
-        </Pressable>
-        <Pressable onPress={() => router.push("/download")} style={({ pressed }) => [pressed && { opacity: 0.75 }]} className="mt-3 rounded-2xl bg-foreground px-4 py-4">
-          <Text className="text-sm font-black text-background">موقع تحميل Flsko</Text>
-          <Text className="mt-1 text-xs leading-5 text-background/70">الروبوت الرسمي ونسخة الهاتف من الرابط الآمن</Text>
-        </Pressable>
-        {user?.role === "admin" && <><Pressable onPress={() => router.push("/admin-suggestions")} style={({ pressed }) => [pressed && { opacity: 0.75 }]} className="mt-3 rounded-2xl border border-primary bg-surface px-4 py-4"><Text className="text-sm font-black text-primary">لوحة اقتراحات الفريق</Text><Text className="mt-1 text-xs leading-5 text-muted">مراجعة الاقتراحات الواردة من المستخدمين</Text></Pressable><Pressable onPress={() => router.push("/development")} style={({ pressed }) => [pressed && { opacity: 0.75 }]} className="mt-3 rounded-2xl border border-primary bg-surface px-4 py-4"><Text className="text-sm font-black text-primary">مركز تطوير Flsko</Text><Text className="mt-1 text-xs leading-5 text-muted">ملفات المشروع والإحصاءات التشغيلية المحمية</Text></Pressable></>}
-        <Text className="mt-4 text-center text-[11px] text-muted">© 2026 علي يوسف · Flsko</Text>
+
+        {isAuthenticated ? (
+          <View style={styles.grid}>
+            <ActionCard icon="chat-bubble-outline" title="احكِ مع فلسقوا" subtitle="محادثة تفهم لهجتك" tone={colors.primary} onPress={() => router.push("/chat")} />
+            <ActionCard icon="auto-awesome" title="اصنع صورة" subtitle="فكرة إلى مشهد بصري" tone={colors.warning} onPress={() => router.push("/create")} />
+            <ActionCard icon="movie-creation" title="اصنع فيديو" subtitle="لقطة قصيرة من وصفك" tone={colors.success} onPress={() => router.push("/create?kind=video")} />
+            <ActionCard icon="psychology" title="ذاكرتي" subtitle="ما اخترت أن يتذكّره" tone={colors.primary} onPress={() => router.push("/memory")} />
+          </View>
+        ) : (
+          <View style={[styles.guestCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.guestIcon, { backgroundColor: `${colors.primary}15` }]}><MaterialIcons name="lock-outline" size={21} color={colors.primary} /></View>
+            <View style={styles.guestCopy}>
+              <Text style={[styles.guestTitle, { color: colors.foreground }]}>مساحتك الخاصة تنتظرك</Text>
+              <Text style={[styles.guestBody, { color: colors.muted }]}>سجّل الدخول لمزامنة محادثاتك ونتائجك وذاكرتك بين أجهزتك.</Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={handleLogin} style={({ pressed }) => [styles.smallButton, { backgroundColor: colors.primary }, pressed && styles.pressed]}><Text style={[styles.smallButtonText, { color: colors.background }]}>دخول</Text></Pressable>
+          </View>
+        )}
+
+        <View style={[styles.trustRow, { borderColor: colors.border }]}>
+          <MaterialIcons name="verified-user" size={17} color={colors.success} />
+          <Text style={[styles.trustText, { color: colors.muted }]}>خصوصيتك أولًا · لا تُحفظ الذكريات إلا بموافقتك</Text>
+        </View>
+        <View style={styles.footerLinks}>
+          <Pressable onPress={() => router.push("/suggestions")}><Text style={[styles.footerLink, { color: colors.primary }]}>اقتراح لتطوير Flsko</Text></Pressable>
+          <Text style={[styles.footerSeparator, { color: colors.border }]}>·</Text>
+          <Pressable onPress={() => router.push("/privacy")}><Text style={[styles.footerLink, { color: colors.primary }]}>الخصوصية</Text></Pressable>
+        </View>
+        <Text style={[styles.copyright, { color: colors.muted }]}>© 2026 علي يوسف · Flsko</Text>
       </ScrollView>
     </ScreenContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  content: { paddingTop: 8, paddingBottom: 34 },
+  topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 22 },
+  brandRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  logo: { width: 42, height: 42, borderRadius: 14 },
+  brandName: { fontSize: 17, fontWeight: "900", letterSpacing: 0.2 },
+  brandArabic: { marginTop: 1, fontSize: 11, fontWeight: "700" },
+  avatar: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  avatarText: { fontSize: 16, fontWeight: "900" },
+  liveDot: { width: 9, height: 9, borderRadius: 5, marginRight: 8 },
+  hero: { minHeight: 274, borderRadius: 30, padding: 22, overflow: "hidden", position: "relative" },
+  heroOrb: { position: "absolute", width: 210, height: 210, borderRadius: 105, right: -70, top: -70 },
+  heroHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  statusPill: { flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "rgba(255,255,255,0.10)", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6 },
+  statusDot: { width: 7, height: 7, borderRadius: 4 },
+  statusText: { color: "#FFFFFF", fontSize: 11, fontWeight: "800" },
+  heroGreeting: { color: "rgba(255,255,255,0.68)", fontSize: 14, fontWeight: "700", marginTop: 28 },
+  heroTitle: { color: "#FFFFFF", fontSize: 34, lineHeight: 42, fontWeight: "900", marginTop: 4 },
+  heroBody: { color: "rgba(255,255,255,0.68)", fontSize: 13, lineHeight: 21, marginTop: 10, maxWidth: 270 },
+  heroButton: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 16, paddingHorizontal: 15, paddingVertical: 12, marginTop: 16 },
+  heroButtonText: { fontSize: 13, fontWeight: "900" },
+  sectionHeader: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginTop: 28, marginBottom: 14 },
+  sectionTitle: { fontSize: 20, fontWeight: "900" },
+  sectionSubtitle: { fontSize: 12, marginTop: 4 },
+  cloudBadge: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 20, paddingHorizontal: 9, paddingVertical: 6 },
+  cloudText: { fontSize: 11, fontWeight: "800" },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: 11 },
+  actionCard: { width: "48.2%", minHeight: 154, borderWidth: 1, borderRadius: 24, padding: 15, position: "relative" },
+  actionIcon: { width: 40, height: 40, borderRadius: 14, alignItems: "center", justifyContent: "center", marginBottom: 14 },
+  actionTitle: { fontSize: 14, fontWeight: "900" },
+  actionSubtitle: { fontSize: 11, lineHeight: 17, marginTop: 5, paddingRight: 4 },
+  actionArrow: { position: "absolute", left: 14, bottom: 14 },
+  guestCard: { borderWidth: 1, borderRadius: 24, padding: 16, flexDirection: "row", alignItems: "center", gap: 12 },
+  guestIcon: { width: 42, height: 42, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  guestCopy: { flex: 1 },
+  guestTitle: { fontSize: 14, fontWeight: "900" },
+  guestBody: { fontSize: 11, lineHeight: 17, marginTop: 4 },
+  smallButton: { borderRadius: 13, paddingHorizontal: 13, paddingVertical: 10 },
+  smallButtonText: { fontSize: 12, fontWeight: "900" },
+  trustRow: { borderTopWidth: 1, marginTop: 24, paddingTop: 15, flexDirection: "row", alignItems: "center", gap: 7 },
+  trustText: { fontSize: 11, flex: 1 },
+  footerLinks: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8, marginTop: 20 },
+  footerLink: { fontSize: 11, fontWeight: "800" },
+  footerSeparator: { fontSize: 13 },
+  copyright: { textAlign: "center", fontSize: 10, marginTop: 13 },
+  pressed: { opacity: 0.82, transform: [{ scale: 0.98 }] },
+});
