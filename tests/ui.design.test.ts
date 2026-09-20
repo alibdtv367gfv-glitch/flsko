@@ -35,4 +35,13 @@ describe("Flsko visual identity", () => {
     expect(source).toContain("تبديل الوضع الداكن");
     expect(source).toContain("setColorScheme(colorScheme === \"dark\" ? \"light\" : \"dark\")");
   });
+
+  it("persists the theme preference and restores it on the next launch", () => {
+    const source = readFileSync(resolve(process.cwd(), "lib/theme-provider.tsx"), "utf8");
+    expect(source).toContain("@react-native-async-storage/async-storage");
+    expect(source).toContain("flsko-color-scheme");
+    expect(source).toContain("AsyncStorage.setItem(THEME_STORAGE_KEY, scheme)");
+    expect(source).toContain("AsyncStorage.getItem(THEME_STORAGE_KEY)");
+    expect(source).toContain("stored === \"light\" || stored === \"dark\"");
+  });
 });
