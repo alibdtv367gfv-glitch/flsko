@@ -1,5 +1,8 @@
 import * as Linking from "expo-linking";
 import * as ReactNative from "react-native";
+import * as WebBrowser from "expo-web-browser";
+
+WebBrowser.maybeCompleteAuthSession();
 
 // Extract scheme from bundle ID (last segment timestamp, prefixed with "manus")
 // e.g., "space.manus.my.app.t20240115103045" -> "manus20240115103045"
@@ -103,12 +106,12 @@ export const getLoginUrl = () => {
 /**
  * Start OAuth login flow.
  *
- * On native platforms (iOS/Android), open the system browser directly so
- * the OAuth callback returns via deep link to the app.
+ * On native platforms (iOS/Android), open Google's OAuth page in the
+ * in-app authentication tab and return through the deep link.
  *
  * On web, this simply redirects to the login URL.
  *
- * @returns Always null, the callback is handled via deep link.
+ * @returns The callback URL when the in-app auth tab reports success.
  */
 export async function startOAuthLogin(): Promise<string | null> {
   const loginUrl = getLoginUrl();
@@ -123,11 +126,20 @@ export async function startOAuthLogin(): Promise<string | null> {
   }
 
   try {
-    // Android: open Google in the system browser. The Worker callback then
-    // redirects to manusapp://oauth/callback and Android reopens Flsko.
-    // This avoids the WebBrowser auth-session wrapper that was returning 403
-    // before Google rendered on some devices.
-    await Linking.openURL(loginUrl);
+    const redirectUri = getRedirectUri();
+    const result = await WebBrowser.openAuthSessionAsync(loginUrl, redirectUri, {
+      showInRecents: true,
+      preferEphemeralSession: false,
+    });
+    console.log("[OAuth] In-app auth result", { type: result.type, url: "url" in result ? result.url : null });
+    if (result.type === "success" && "url" in result && result.url) {
+      // Let Expo Router consume the deep-link callback in the app.
+      await Linking.openURL(result.url);
+      return result.url;
+    }
+    if (result.type === "cancel" || result.type === "dismiss") {
+      throw new Error("تم إلغاء تسجيل الدخول عبر Google.");
+    }
   } catch (error) {
     console.error("[OAuth] Failed to open login URL:", error);
     throw new Error("تعذر فتح صفحة تسجيل الدخول. تحقق من اتصال الإنترنت وحاول مرة أخرى.");

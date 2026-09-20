@@ -48,8 +48,9 @@ describe("Flsko visual identity", () => {
   it("explains the direct browser OAuth return flow", () => {
     const layout = readFileSync(resolve(process.cwd(), "app/_layout.tsx"), "utf8");
     const oauth = readFileSync(resolve(process.cwd(), "constants/oauth.ts"), "utf8");
-    expect(layout).toContain("سيفتح Google في المتصفح");
-    expect(oauth).toContain("await Linking.openURL(loginUrl)");
-    expect(oauth).not.toContain("WebBrowser.openAuthSessionAsync");
+    expect(layout).toContain("ستظهر نافذة Google داخل التطبيق");
+    expect(oauth).toContain("WebBrowser.openAuthSessionAsync");
+    expect(oauth).toContain("WebBrowser.maybeCompleteAuthSession");
+    expect(oauth).toContain("const redirectUri = getRedirectUri()");
   });
 });
