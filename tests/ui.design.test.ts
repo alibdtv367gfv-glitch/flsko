@@ -18,4 +18,21 @@ describe("Flsko visual identity", () => {
     expect(source).toContain("fontWeight: \"700\"");
     expect(source).toContain("elevation: 0");
   });
+
+  it("exposes a consistent chat composer and media studio", () => {
+    const chat = readFileSync(resolve(process.cwd(), "app/(tabs)/chat.tsx"), "utf8");
+    const create = readFileSync(resolve(process.cwd(), "app/(tabs)/create.tsx"), "utf8");
+    expect(chat).toContain("اكتب ما يدور ببالك...");
+    expect(chat).toContain("إجابة أخرى من مصدر مختلف");
+    expect(create).toContain("صف الفكرة، ونحن نرتّب الباقي.");
+    expect(create).toContain("صمّم مشهدك");
+    expect(create).toContain("حرّك فكرتك");
+    expect(create).toContain("اصنع مزاجًا");
+  });
+
+  it("provides an explicit light/dark theme control", () => {
+    const source = readFileSync(resolve(process.cwd(), "app/(tabs)/index.tsx"), "utf8");
+    expect(source).toContain("تبديل الوضع الداكن");
+    expect(source).toContain("setColorScheme(colorScheme === \"dark\" ? \"light\" : \"dark\")");
+  });
 });

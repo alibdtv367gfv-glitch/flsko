@@ -8,6 +8,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
+import { useThemeContext } from "@/lib/theme-provider";
 import { startOAuthLogin } from "@/constants/oauth";
 
 function pressFeedback() {
@@ -36,7 +37,8 @@ function ActionCard({ icon, title, subtitle, tone, onPress }: { icon: keyof type
 
 export default function HomeScreen() {
   const colors = useColors();
-  const { user, loading, isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
+  const { colorScheme, setColorScheme } = useThemeContext();
   const status = trpc.agent.status.useQuery();
   const orchestrationReady = status.data?.orchestration === "automatic";
   const greeting = useMemo(() => user?.name ? `أهلًا ${user.name.split(" ")[0]}` : "أهلًا بك", [user?.name]);
@@ -61,11 +63,16 @@ export default function HomeScreen() {
               <Text style={[styles.brandArabic, { color: colors.primary }]}>فلسقوا · وكيلك الذكي</Text>
             </View>
           </View>
-          {isAuthenticated ? (
-            <Pressable accessibilityLabel="فتح الملف الشخصي" onPress={() => { pressFeedback(); router.push("/memory"); }} style={({ pressed }) => [styles.avatar, { backgroundColor: `${colors.primary}18`, borderColor: `${colors.primary}40` }, pressed && styles.pressed]}>
-              <Text style={[styles.avatarText, { color: colors.primary }]}>{(user?.name || "ف").slice(0, 1).toUpperCase()}</Text>
+          <View style={styles.topActions}>
+            <Pressable accessibilityRole="button" accessibilityLabel="تبديل الوضع الداكن" onPress={() => { pressFeedback(); setColorScheme(colorScheme === "dark" ? "light" : "dark"); }} style={({ pressed }) => [styles.themeButton, { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}30` }, pressed && styles.pressed]}>
+              <MaterialIcons name={colorScheme === "dark" ? "light-mode" : "dark-mode"} size={18} color={colors.primary} />
             </Pressable>
-          ) : <View style={[styles.liveDot, { backgroundColor: colors.success }]} />}
+            {isAuthenticated ? (
+              <Pressable accessibilityLabel="فتح الملف الشخصي" onPress={() => { pressFeedback(); router.push("/memory"); }} style={({ pressed }) => [styles.avatar, { backgroundColor: `${colors.primary}18`, borderColor: `${colors.primary}40` }, pressed && styles.pressed]}>
+                <Text style={[styles.avatarText, { color: colors.primary }]}>{(user?.name || "ف").slice(0, 1).toUpperCase()}</Text>
+              </Pressable>
+            ) : <View style={[styles.liveDot, { backgroundColor: colors.success }]} />}
+          </View>
         </View>
 
         <View style={[styles.hero, { backgroundColor: colors.foreground }]}>
@@ -139,6 +146,8 @@ const styles = StyleSheet.create({
   logo: { width: 42, height: 42, borderRadius: 14 },
   brandName: { fontSize: 17, fontWeight: "900", letterSpacing: 0.2 },
   brandArabic: { marginTop: 1, fontSize: 11, fontWeight: "700" },
+  topActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  themeButton: { width: 36, height: 36, borderRadius: 13, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   avatar: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   avatarText: { fontSize: 16, fontWeight: "900" },
   liveDot: { width: 9, height: 9, borderRadius: 5, marginRight: 8 },
