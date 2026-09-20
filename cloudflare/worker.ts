@@ -1,3 +1,5 @@
+import { providerHealthSnapshot, routeWithFallback } from "./neural-router";
+
 type D1Result<T = Record<string, unknown>> = { results: T[] };
 type D1Statement = { bind: (...values: unknown[]) => D1Statement; first: <T = Record<string, unknown>>() => Promise<T | null>; all: <T = Record<string, unknown>>() => Promise<D1Result<T>>; run: () => Promise<unknown> };
 type D1Database = { prepare: (query: string) => D1Statement };
@@ -54,6 +56,7 @@ function layer(id: string, name: string, kind: string, priority: number, availab
 function mediaStatus(env?: Env) {
   return {
     policy: "automatic-best-available",
+    router: { mode: "safe-fallback", failureCooldownMs: 60000, health: providerHealthSnapshot() },
     image: { selected: env?.FLSKO_IMAGE_PROVIDER_URL ? "configured-open-provider" : "pollinations-flux", layers: [layer("gemini-image", "Gemini Image", "cloud-closed", 1, false, "حصة Gemini الحالية أعادت 429"), layer("configured-open-provider", "مزود صور مفتوح مخصص", "cloud-open", 2, Boolean(env?.FLSKO_IMAGE_PROVIDER_URL), env?.FLSKO_IMAGE_PROVIDER_URL ? "مهيأ" : "لم تتم تهيئته"), layer("pollinations-flux", "Pollinations Flux", "cloud-open", 3, true, "تم اختباره وأعاد JPEG فعليًا"), layer("mobile-sd-lcm", "Stable Diffusion LCM محلي", "on-device", 4, false, "يحتاج حزمة نموذج Android أصلية ولم تُضمّن بعد")] },
     video: { selected: env?.FLSKO_WAN_SPACE ? "wan-gradio" : null, layers: [layer("gemini-veo", "Gemini/Veo", "cloud-closed", 1, false, "حصة Gemini الحالية أعادت 429"), layer("wan-gradio", "Wan 2.1 Gradio Space", "cloud-open-queue", 2, Boolean(env?.FLSKO_WAN_SPACE), env?.FLSKO_WAN_SPACE ? "مهيأ بطابور Gradio" : "لم تتم تهيئته"), layer("wan-provider", "Wan 2.x عبر مزود", "cloud-open", 3, Boolean(env?.FLSKO_VIDEO_PROVIDER_URL), env?.FLSKO_VIDEO_PROVIDER_URL ? "مهيأ" : "لا يوجد عنوان مزود"), layer("cogvideox-provider", "CogVideoX عبر مزود", "cloud-open", 4, false, "لا يوجد عنوان مزود مستقل"), layer("rife-mobile", "RIFE محلي", "on-device", 5, false, "يحتاج محرك صور محليًا ومدخلات إطارات")] },
     music: { selected: env?.FLSKO_VODER_API_URL ? "voder" : null, layers: [layer("gemini-lyria", "Gemini/Lyria", "cloud-closed", 1, false, "حصة Gemini الحالية أعادت 429"), layer("ace-step-provider", "ACE-Step عبر مزود", "cloud-open", 2, Boolean(env?.FLSKO_MUSIC_PROVIDER_URL), env?.FLSKO_MUSIC_PROVIDER_URL ? "مهيأ" : "لا يوجد عنوان مزود"), layer("voder", "VODER / ACE-Step", "self-hosted-open", 3, Boolean(env?.FLSKO_VODER_API_URL), env?.FLSKO_VODER_API_URL ? "مهيأ" : "يحتاج خادم VODER مستقلًا؛ ليس مناسبًا لهاتف عادي"), layer("musicgen-mobile", "MusicGen Small محلي", "on-device", 4, false, "يحتاج نموذج INT8 وتكامل Android أصلي"), layer("audioldm-provider", "AudioLDM عبر مزود", "cloud-open", 5, false, "لا يوجد عنوان مزود مستقل")] },
@@ -61,25 +64,33 @@ function mediaStatus(env?: Env) {
   };
 }
 async function generateOpenImage(prompt: string, env: Env) {
-  if (env.FLSKO_IMAGE_PROVIDER_URL) {
-    const configured = await fetch(env.FLSKO_IMAGE_PROVIDER_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt, model: "stable-diffusion-xl" }) });
-    if (configured.ok) {
-      const payload = await configured.json().catch(() => ({})) as { url?: string; image_url?: string };
-      const assetUrl = payload.url || payload.image_url;
-      if (assetUrl) return { url: assetUrl, provider: "open-source-configured", status: "completed" as const, message: "تم اختيار مزود الصور المفتوح المهيأ تلقائيًا." };
-    }
-  }
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?model=flux&width=1024&height=1024&nologo=true`;
-  const response = await fetch(url, { headers: { accept: "image/jpeg" } });
-  if (!response.ok) throw new Error(`Open image provider failed: ${response.status}`);
-  return { url, provider: "open-source", status: "completed" as const, message: "تم إنشاء الصورة عبر نموذج مفتوح المصدر." };
+  const result = await routeWithFallback([
+    ...(env.FLSKO_IMAGE_PROVIDER_URL ? [{ id: "configured-open-provider", kind: "image" as const, priority: 1, execute: async () => {
+      const response = await fetch(env.FLSKO_IMAGE_PROVIDER_URL!, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt, model: "stable-diffusion-xl" }) });
+      if (!response.ok) throw new Error(`configured image provider failed: ${response.status}`);
+      const payload = await response.json().catch(() => ({})) as { url?: string; image_url?: string };
+      const url = payload.url || payload.image_url;
+      if (!url) throw new Error("configured image provider returned no asset");
+      return { url, provider: "open-source-configured", status: "completed" as const, message: "تم اختيار مزود الصور المفتوح المهيأ تلقائيًا." };
+    } }] : []),
+    { id: "pollinations-flux", kind: "image", priority: 2, execute: async () => {
+      const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?model=flux&width=1024&height=1024&nologo=true`;
+      const response = await fetch(url, { headers: { accept: "image/jpeg" } });
+      if (!response.ok) throw new Error(`Pollinations image provider failed: ${response.status}`);
+      return { url, provider: "open-source", status: "completed" as const, message: "تم إنشاء الصورة عبر نموذج مفتوح المصدر." };
+    } },
+  ]);
+  return { ...result.value, provider: result.provider, attempted: result.attempted };
 }
 async function submitWanVideo(prompt: string, env: Env) {
   const space = env.FLSKO_WAN_SPACE || "https://wan-ai-wan2-1.hf.space";
-  const response = await fetch(`${space.replace(/\/$/, "")}/gradio_api/call/t2v_generation_async`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: [prompt, "1280*720", true, -1] }) });
-  const payload = await response.json().catch(() => ({})) as { event_id?: string };
-  if (!response.ok || !payload.event_id) throw new Error(`Wan Gradio queue failed: ${response.status}`);
-  return { status: "queued" as const, provider: "wan-gradio", jobId: payload.event_id, message: "تم إرسال الفيديو إلى طابور Wan المفتوح. سيحتاج وقتًا للمعالجة بسبب موارد Space المجانية." };
+  const result = await routeWithFallback([{ id: "wan-gradio", kind: "video", priority: 1, execute: async () => {
+    const response = await fetch(`${space.replace(/\/$/, "")}/gradio_api/call/t2v_generation_async`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: [prompt, "1280*720", true, -1] }) });
+    const payload = await response.json().catch(() => ({})) as { event_id?: string };
+    if (!response.ok || !payload.event_id) throw new Error(`Wan Gradio queue failed: ${response.status}`);
+    return { status: "queued" as const, provider: "wan-gradio", jobId: payload.event_id, message: "تم إرسال الفيديو إلى طابور Wan المفتوح. سيحتاج وقتًا للمعالجة بسبب موارد Space المجانية." };
+  } }]);
+  return { ...result.value, provider: result.provider, attempted: result.attempted };
 }
 async function pollWanVideo(jobId: string, env: Env) {
   const space = env.FLSKO_WAN_SPACE || "https://wan-ai-wan2-1.hf.space";
@@ -104,14 +115,18 @@ async function trpcInput(request: Request, url: URL) {
 }
 async function runChat(message: string, mode: string, user: Record<string, unknown>, env: Env) {
   const memories = await env.DB.prepare("SELECT content FROM memories WHERE user_id=? AND consent=1 ORDER BY created_at DESC LIMIT 20").bind(user.id).all<{ content: string }>();
-  const response = await fetch("https://router.huggingface.co/v1/chat/completions", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${env.HF_TOKEN}` }, body: JSON.stringify({ model: env.FLSKO_HF_MODEL || "meta-llama/Llama-3.1-8B-Instruct", messages: [{ role: "system", content: `${SYSTEM_PROMPT}\nوضع الإجابة: ${mode}.\nذاكرة المستخدم المصرح بها:\n${memories.results.map((x) => x.content).join("\n")}` }, { role: "user", content: message }], temperature: 0.6, max_tokens: 1000 }) });
-  const payload = await response.json().catch(() => ({})) as { choices?: Array<{ message?: { content?: unknown } }> };
-  if (!response.ok) throw new Error("تعذر الحصول على رد من مزود النموذج");
-  const text = payload.choices?.[0]?.message?.content;
-  if (typeof text !== "string" || !text.trim()) throw new Error("لم يصل رد نصي من النموذج");
+  const routed = await routeWithFallback([{ id: "huggingface-router", kind: "chat", priority: 1, execute: async () => {
+    const response = await fetch("https://router.huggingface.co/v1/chat/completions", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${env.HF_TOKEN}` }, body: JSON.stringify({ model: env.FLSKO_HF_MODEL || "meta-llama/Llama-3.1-8B-Instruct", messages: [{ role: "system", content: `${SYSTEM_PROMPT}\nوضع الإجابة: ${mode}.\nذاكرة المستخدم المصرح بها:\n${memories.results.map((x) => x.content).join("\n")}` }, { role: "user", content: message }], temperature: 0.6, max_tokens: 1000 }) });
+    const payload = await response.json().catch(() => ({})) as { choices?: Array<{ message?: { content?: unknown } }> };
+    if (!response.ok) throw new Error(`تعذر الحصول على رد من مزود النموذج: ${response.status}`);
+    const text = payload.choices?.[0]?.message?.content;
+    if (typeof text !== "string" || !text.trim()) throw new Error("لم يصل رد نصي من النموذج");
+    return text.trim();
+  } }]);
+  const text = routed.value;
   await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "user", message).run();
   await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "assistant", text.trim()).run();
-  return { text: text.trim(), provider: "orchestrator", sourceId: "huggingface", compared: 1 };
+  return { text: text.trim(), provider: "orchestrator", sourceId: routed.provider, compared: routed.attempted.length, attempted: routed.attempted };
 }
 
 export default {
