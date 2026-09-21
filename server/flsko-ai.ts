@@ -2,6 +2,10 @@ import { storagePut } from "./storage";
 import { generateImage } from "./_core/imageGeneration";
 import { invokeLLM, type Message } from "./_core/llm";
 import { buildSyrianContext } from "./syrian-knowledge";
+import { buildFlskoSystemPrompt } from "./flsko-identity";
+import { isProviderAvailable, withCircuitBreaker } from "./circuit-breaker";
+import { arabicAdaptationInstruction } from "./translation-bridge";
+import { generateImageFreeChain } from "./providers/image-free";
 
 const geminiKey = process.env.FLSKO_GEMINI_API_KEY?.trim();
 const openAiKey = process.env.FLSKO_OPENAI_API_KEY?.trim();
@@ -24,7 +28,7 @@ function isHttpUrl(value: string | undefined): value is string {
   try { const url = new URL(value); return url.protocol === "http:" || url.protocol === "https:"; } catch { return false; }
 }
 
-const systemPrompt = `أنت فلسقوا، وكيل ذكي عربي أولًا يفهم السوريين بتنوعهم الجغرافي والثقافي واللغوي دون تنميط أو افتراضات حساسة. أجب بلهجة المستخدم نفسها قدر الإمكان، وإذا كتب بلهجة سورية فحافظ على لهجته، وإذا كتب بالفصحى فأجب بالفصحى. كن دقيقًا وصريحًا بشأن حدود معرفتك. لا تدّعِ أنك تعلمت من محتوى خاص أو من حسابات لم يمنح أصحابها إذنًا. لا تحفظ أي تفضيل أو معلومة شخصية إلا عبر ميزة الذاكرة وبموافقة المستخدم. إذا سأل المستخدم عن اسمك فقل: اسمي فلسقوا.`;
+const systemPrompt = buildFlskoSystemPrompt();
 
 type Candidate = { provider: string; text: string; latencyMs: number; score: number };
 export type ChatMode = "natural" | "pro" | "pro-max";
@@ -174,17 +178,30 @@ export async function answerAsFlsko(userMessage: string, memories: string[], rec
   const profileContext = buildProfileContext(profile);
   const attachmentContext = attachments.length ? `\nملفات اختار المستخدم إرفاقها بهذه الرسالة. استخدمها فقط إذا كانت متاحة للمزود، ولا تفترض محتواها من الاسم:\n${attachments.map((file) => `- ${file.name} (${file.mimeType}) — ${file.storageUrl}`).join("\n")}` : "";
   const messages: Message[] = [
-    { role: "system", content: `${systemPrompt}\n${buildChatModeContext(mode)}\n${buildSyrianContext(userMessage)}${profileContext}${attachmentContext}${context}${recentContext}` },
+    {
+      role: "system",
+      content: `${systemPrompt}\n${buildChatModeContext(mode)}\n${buildSyrianContext(userMessage)}\n${arabicAdaptationInstruction()}${profileContext}${attachmentContext}${context}${recentContext}`,
+    },
     { role: "user", content: userMessage },
   ];
   const tasks: Array<Promise<Candidate>> = [];
-  if (geminiKey && !excludedProviders.includes("gemini")) tasks.push(callGemini(messages).then((result) => ({ provider: "gemini", ...result, score: scoreAnswer(result.text, userMessage) })));
-  if (openAiKey && !excludedProviders.includes("chatgpt")) tasks.push(callOpenAi(messages).then((result) => ({ provider: "chatgpt", ...result, score: scoreAnswer(result.text, userMessage) })));
-  if (openSourceChatUrl && !excludedProviders.includes("open-source")) tasks.push(callOpenSourceChat(messages).then((result) => ({ provider: "open-source", ...result, score: scoreAnswer(result.text, userMessage) })));
-  if (huggingFaceToken && !excludedProviders.includes("huggingface")) tasks.push(callHuggingFaceChat(messages).then((result) => ({ provider: "huggingface", ...result, score: scoreAnswer(result.text, userMessage) })));
-  if (pollinationsKey && !excludedProviders.includes("pollinations")) tasks.push(callPollinationsChat(messages).then((result) => ({ provider: "pollinations", ...result, score: scoreAnswer(result.text, userMessage) })));
-  if (!excludedProviders.includes("open-research")) tasks.push(callOpenResearch(userMessage).then((result) => ({ provider: "open-research", ...result, score: Math.max(1, scoreAnswer(result.text, userMessage) - 2) })));
-  tasks.push(callManagedChat(messages).then((result) => ({ provider: "managed-fallback", ...result, score: scoreAnswer(result.text, userMessage) })));
+  const pushProvider = (name: string, enabled: boolean, fn: () => Promise<{ text: string; latencyMs: number }>, scoreAdjust = 0) => {
+    if (!enabled || excludedProviders.includes(name) || !isProviderAvailable(name)) return;
+    tasks.push(
+      withCircuitBreaker(name, fn).then((result) => ({
+        provider: name,
+        ...result,
+        score: Math.max(0, scoreAnswer(result.text, userMessage) + scoreAdjust),
+      })),
+    );
+  };
+  pushProvider("gemini", Boolean(geminiKey), () => callGemini(messages));
+  pushProvider("chatgpt", Boolean(openAiKey), () => callOpenAi(messages));
+  pushProvider("open-source", Boolean(openSourceChatUrl), () => callOpenSourceChat(messages));
+  pushProvider("huggingface", Boolean(huggingFaceToken), () => callHuggingFaceChat(messages));
+  pushProvider("pollinations", Boolean(pollinationsKey), () => callPollinationsChat(messages));
+  pushProvider("open-research", true, () => callOpenResearch(userMessage), -2);
+  pushProvider("managed-fallback", true, () => callManagedChat(messages));
 
   const results = await Promise.allSettled(tasks);
   results.forEach((result, index) => { if (result.status === "rejected") console.warn(`[Flsko] candidate ${index + 1} unavailable:`, result.reason instanceof Error ? result.reason.message : result.reason); });
@@ -222,21 +239,40 @@ export async function createFlskoImage(prompt: string) {
     try { return await generateGeminiImage(prompt); } catch (error) { console.warn("[Flsko] Gemini image unavailable; falling back:", error instanceof Error ? error.message : error); }
   }
   if (isHttpUrl(openSourceImageUrl)) {
-    const response = await fetch(openSourceImageUrl, { method: "POST", headers: { "content-type": "application/json", ...(openSourceChatKey ? { authorization: `Bearer ${openSourceChatKey}` } : {}) }, body: JSON.stringify({ prompt, model: process.env.FLSKO_IMAGE_MODEL || "stabilityai/stable-diffusion-xl-base-1.0" }) });
-    if (!response.ok) throw new Error(`Open-source image provider failed: ${response.status}`);
-    const payload = (await response.json()) as { url?: string; image_url?: string };
-    if (!payload.url && !payload.image_url) throw new Error("Image provider returned no URL");
-    return { url: payload.url || payload.image_url, provider: "orchestrator" };
-  }
-  if (pollinationsKey) {
-    const response = await fetch(`https://gen.pollinations.ai/image/${encodeURIComponent(prompt)}?model=black-forest-labs/flux-1-schnell`, { headers: { authorization: `Bearer ${pollinationsKey}` } });
-    if (response.ok) {
-      const stored = await storagePut(`generated/open-image-${Date.now()}.png`, Buffer.from(await response.arrayBuffer()), response.headers.get("content-type") || "image/png");
-      return { url: stored.url, provider: "open-source" };
+    try {
+      const response = await fetch(openSourceImageUrl, { method: "POST", headers: { "content-type": "application/json", ...(openSourceChatKey ? { authorization: `Bearer ${openSourceChatKey}` } : {}) }, body: JSON.stringify({ prompt, model: process.env.FLSKO_IMAGE_MODEL || "stabilityai/stable-diffusion-xl-base-1.0" }) });
+      if (response.ok) {
+        const payload = (await response.json()) as { url?: string; image_url?: string };
+        if (payload.url || payload.image_url) return { url: payload.url || payload.image_url, provider: "orchestrator" };
+      }
+    } catch (error) {
+      console.warn("[Flsko] Configured image provider failed:", error instanceof Error ? error.message : error);
     }
   }
-  const result = await generateImage({ prompt, quality: "medium" });
-  return { url: result.url, provider: "managed-fallback" };
+  if (pollinationsKey) {
+    try {
+      const response = await fetch(`https://gen.pollinations.ai/image/${encodeURIComponent(prompt)}?model=black-forest-labs/flux-1-schnell`, { headers: { authorization: `Bearer ${pollinationsKey}` } });
+      if (response.ok) {
+        const stored = await storagePut(`generated/open-image-${Date.now()}.png`, Buffer.from(await response.arrayBuffer()), response.headers.get("content-type") || "image/png");
+        return { url: stored.url, provider: "open-source" };
+      }
+    } catch (error) {
+      console.warn("[Flsko] Pollinations keyed image failed:", error instanceof Error ? error.message : error);
+    }
+  }
+  // Documented free public fallbacks (Pollinations URL API + AI Horde)
+  try {
+    const free = await generateImageFreeChain(prompt);
+    return { url: free.url, provider: free.provider };
+  } catch (error) {
+    console.warn("[Flsko] Free image chain failed:", error instanceof Error ? error.message : error);
+  }
+  try {
+    const result = await generateImage({ prompt, quality: "medium" });
+    return { url: result.url, provider: "managed-fallback" };
+  } catch {
+    throw new Error("تعذر إنشاء الصورة عبر المزودات المتاحة حاليًا.");
+  }
 }
 
 export async function createFlskoVideo(prompt: string) {
