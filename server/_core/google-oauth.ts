@@ -33,10 +33,27 @@ function getCallbackUri(req: Request) {
 }
 
 function validReturnTo(value: string, platform: "web" | "native") {
-  if (platform === "native") return value.startsWith("manusapp://oauth/callback");
+  if (!value || value.length > 2000) return false;
+  if (platform === "native") {
+    // Custom app scheme (com.flsko.app → manusapp), Expo Go (exp:// / exps://), and legacy
+    if (value.startsWith("manusapp://")) return true;
+    if (value.startsWith("flsko://")) return true;
+    if (value.startsWith("exp://") || value.startsWith("exps://")) return true;
+    return false;
+  }
   try {
     const url = new URL(value);
-    return url.protocol === "https:" || url.hostname === "localhost";
+    if (url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1")) return true;
+    if (url.protocol !== "https:") return false;
+    // Allow app/API hosts only (block open redirects)
+    const host = url.hostname.toLowerCase();
+    return (
+      host === "localhost" ||
+      host.endsWith(".flsko.workers.dev") ||
+      host.endsWith(".manus.computer") ||
+      host.endsWith(".expo.dev") ||
+      host === "flsko.workers.dev"
+    );
   } catch {
     return false;
   }

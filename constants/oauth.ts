@@ -30,24 +30,26 @@ export const API_BASE_URL = env.apiBaseUrl;
  * Metro runs on 8081, API server runs on 3000.
  * URL pattern: https://PORT-sandboxid.region.domain
  */
+/** Production Cloudflare Workers API */
+const PRODUCTION_API_BASE = "https://flsko-api.flsko.workers.dev";
+
 export function getApiBaseUrl(): string {
-  // If API_BASE_URL is set, use it
+  // Explicit env wins
   if (API_BASE_URL) {
     return API_BASE_URL.replace(/\/$/, "");
   }
 
-  // On web, derive from current hostname by replacing port 8081 with 3000
+  // On web, derive from current hostname by replacing port 8081 with 3000 (local Manus-style dev)
   if (ReactNative.Platform.OS === "web" && typeof window !== "undefined" && window.location) {
     const { protocol, hostname } = window.location;
-    // Pattern: 8081-sandboxid.region.domain -> 3000-sandboxid.region.domain
     const apiHostname = hostname.replace(/^8081-/, "3000-");
     if (apiHostname !== hostname) {
       return `${protocol}//${apiHostname}`;
     }
   }
 
-  // Fallback to empty (will use relative URL)
-  return "";
+  // Mobile / Expo Go / production builds: always hit the live Workers API
+  return PRODUCTION_API_BASE;
 }
 
 export const SESSION_TOKEN_KEY = "app_session_token";
@@ -106,10 +108,10 @@ export const getLoginUrl = () => {
  * @returns Always null, the callback is handled via deep link.
  */
 export async function startOAuthLogin(): Promise<string | null> {
+  WebBrowser.maybeCompleteAuthSession();
   const loginUrl = getLoginUrl();
 
   if (ReactNative.Platform.OS === "web") {
-    // On web, just redirect
     if (typeof window !== "undefined") {
       window.location.href = loginUrl;
     }
@@ -117,13 +119,20 @@ export async function startOAuthLogin(): Promise<string | null> {
   }
 
   try {
+    // Prefer system browser / Chrome Custom Tabs (Google blocks embedded WebViews with 403)
     const redirectUri = getRedirectUri();
-    await WebBrowser.openAuthSessionAsync(loginUrl, redirectUri);
+    const result = await WebBrowser.openAuthSessionAsync(loginUrl, redirectUri, {
+      showInRecents: true,
+      preferEphemeralSession: false,
+      createTask: false,
+    });
+    if (result.type === "cancel" || result.type === "dismiss") {
+      return null;
+    }
   } catch (error) {
     console.error("[OAuth] Failed to open login URL:", error);
-    throw new Error("تعذر فتح صفحة تسجيل الدخول. تحقق من اتصال الإنترنت وحاول مرة أخرى.");
+    throw new Error("تعذر فتح صفحة تسجيل الدخول. أوقف الـ VPN إن وُجد، وتأكد من الاتصال، ثم أعد المحاولة.");
   }
 
-  // The OAuth callback will reopen the app via deep link.
   return null;
 }
