@@ -1,0 +1,21 @@
+services:
+  musicgen:
+    build: .
+    ports:
+      - "8090:8090"
+    environment:
+      MUSICGEN_MODEL: facebook/musicgen-small
+      PUBLIC_BASE: http://127.0.0.1:8090
+      OUTPUT_DIR: /data/output
+    volumes:
+      - musicgen-out:/data/output
+    # Uncomment for NVIDIA GPU host:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  musicgen-out:
