@@ -6,6 +6,8 @@ import { buildFlskoSystemPrompt } from "./flsko-identity";
 import { isProviderAvailable, withCircuitBreaker } from "./circuit-breaker";
 import { arabicAdaptationInstruction } from "./translation-bridge";
 import { generateImageFourLayers, generateMusicFourLayers, generateVideoFourLayers } from "./providers/free-media";
+import { compressConversation, compressMemories, compressUserMessage } from "./connectors/context-mode";
+import { remoteVideoCascade } from "./connectors/remote-media";
 
 const geminiKey = process.env.FLSKO_GEMINI_API_KEY?.trim();
 const openAiKey = process.env.FLSKO_OPENAI_API_KEY?.trim();
