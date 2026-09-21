@@ -11,6 +11,7 @@ import { startOAuthLogin } from "@/constants/oauth";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
+import { prepareOfflineTts, speakArabic, stopSpeaking } from "@/lib/offline-tts";
 
 type VoiceGender = "male" | "female";
 type ChatMode = "natural" | "pro" | "pro-max";
@@ -47,7 +48,9 @@ export default function ChatScreen() {
     void Speech.getAvailableVoicesAsync().then((available) => {
       setVoices(available.filter((voice) => voice.language?.toLocaleLowerCase().startsWith("ar")) as DeviceVoice[]);
     });
-    return () => { void Speech.stop(); };
+    // Prefer ONNX offline TTS on Android dev builds; falls back to system Speech
+    void prepareOfflineTts();
+    return () => { void stopSpeaking(); };
   }, []);
 
   useEffect(() => {
@@ -80,8 +83,11 @@ export default function ChatScreen() {
 
   const readAloud = (text: string) => {
     const selected = voices.find((voice) => voiceMatches(voice, voiceGender)) || voices[0];
-    void Speech.stop();
-    Speech.speak(text, { language: "ar-SA", voice: selected?.identifier, rate: 0.92, pitch: voiceGender === "female" ? 1.05 : 0.9 });
+    void speakArabic(text, {
+      voiceId: selected?.identifier,
+      rate: 0.92,
+      pitch: voiceGender === "female" ? 1.05 : 0.9,
+    });
   };
 
   const toggleRecording = async () => {
