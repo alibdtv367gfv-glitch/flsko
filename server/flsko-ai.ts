@@ -173,8 +173,11 @@ async function callOpenResearch(userMessage: string) {
 }
 
 export async function answerAsFlsko(userMessage: string, memories: string[], recentConversation: Array<{ role: "user" | "assistant"; content: string }> = [], excludedProviders: string[] = [], profile?: { displayName?: string | null; gender?: string | null; about?: string | null; governorate?: string | null }, attachments: Array<{ name: string; mimeType: string; storageUrl: string }> = [], mode: ChatMode = "natural") {
-  const context = memories.length ? `\nمعلومات وافق المستخدم على تذكرها:\n- ${memories.join("\n- ")}` : "";
-  const recentContext = recentConversation.length ? `\nسياق المحادثة الأخيرة للتكيّف فقط، وليس ذاكرة دائمة:\n${recentConversation.slice(-8).map((message) => `${message.role}: ${message.content}`).join("\n")}` : "";
+  const compactMemories = compressMemories(memories);
+  const compactRecent = compressConversation(recentConversation);
+  const compactUser = compressUserMessage(userMessage);
+  const context = compactMemories.length ? `\nمعلومات وافق المستخدم على تذكرها:\n- ${compactMemories.join("\n- ")}` : "";
+  const recentContext = compactRecent.length ? `\nسياق المحادثة الأخيرة للتكيّف فقط، وليس ذاكرة دائمة:\n${compactRecent.map((message) => `${message.role}: ${message.content}`).join("\n")}` : "";
   const profileContext = buildProfileContext(profile);
   const attachmentContext = attachments.length ? `\nملفات اختار المستخدم إرفاقها بهذه الرسالة. استخدمها فقط إذا كانت متاحة للمزود، ولا تفترض محتواها من الاسم:\n${attachments.map((file) => `- ${file.name} (${file.mimeType}) — ${file.storageUrl}`).join("\n")}` : "";
   const messages: Message[] = [
@@ -182,7 +185,7 @@ export async function answerAsFlsko(userMessage: string, memories: string[], rec
       role: "system",
       content: `${systemPrompt}\n${buildChatModeContext(mode)}\n${buildSyrianContext(userMessage)}\n${arabicAdaptationInstruction()}${profileContext}${attachmentContext}${context}${recentContext}`,
     },
-    { role: "user", content: userMessage },
+    { role: "user", content: compactUser },
   ];
   const tasks: Array<Promise<Candidate>> = [];
   const pushProvider = (name: string, enabled: boolean, fn: () => Promise<{ text: string; latencyMs: number }>, scoreAdjust = 0) => {
@@ -256,6 +259,21 @@ export async function createFlskoImage(prompt: string) {
 }
 
 export async function createFlskoVideo(prompt: string) {
+  // Remote open-source GPU hosts first (SkyReels / Allegro / GenStudio) — no local weights
+  try {
+    const remote = await remoteVideoCascade(prompt);
+    if (remote.status === "completed" || remote.status === "queued") {
+      return {
+        status: remote.status,
+        provider: remote.provider,
+        url: remote.url,
+        jobId: remote.jobId,
+        message: remote.message,
+      };
+    }
+  } catch (error) {
+    console.warn("[Flsko] remote video cascade failed:", error instanceof Error ? error.message : error);
+  }
   const free = await generateVideoFourLayers(prompt);
   if (free.status === "completed" || free.status === "queued") {
     return {
