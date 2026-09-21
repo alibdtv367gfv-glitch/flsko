@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!--
+    Models live in app-internal storage (context.filesDir) — no broad storage permission required
+    on modern Android for that path. INTERNET is only needed for the first-time model download.
+  -->
+  <uses-permission android:name="android.permission.INTERNET" />
+</manifest>
