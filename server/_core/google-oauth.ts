@@ -17,6 +17,13 @@ function googleSecret() {
   return new TextEncoder().encode(secret);
 }
 
+/**
+ * Google OAuth redirect URI.
+ * Production (Cloudflare Workers): set GOOGLE_OAUTH_REDIRECT_URI to
+ * https://flsko-api.flsko.workers.dev/api/google/callback
+ * and register the same value in Google Cloud Console → Credentials → Authorized redirect URIs.
+ * Legacy Manus hosts (3000-*.manus.computer) must not be used in production.
+ */
 function getCallbackUri(req: Request) {
   const configured = process.env.GOOGLE_OAUTH_REDIRECT_URI?.trim();
   if (configured) return configured;

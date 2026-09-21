@@ -46,7 +46,21 @@ FLSKO_VIDEO_MODEL=Wan-AI/Wan2.2-TI2V-5B
 FLSKO_MUSIC_PROVIDER_URL=https://your-open-source-music-provider/generate
 FLSKO_GEMINI_MUSIC_PROVIDER_URL=https://your-gemini-music-adapter/generate
 FLSKO_POLLINATIONS_API_KEY=optional-server-key
+
+# Google OAuth — production (Cloudflare Workers API)
+GOOGLE_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=your-client-secret
+GOOGLE_OAUTH_REDIRECT_URI=https://flsko-api.flsko.workers.dev/api/google/callback
+EXPO_PUBLIC_API_BASE_URL=https://flsko-api.flsko.workers.dev
+JWT_SECRET=long-random-string
 ```
+
+### Google OAuth في الإنتاج
+
+1. في [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → OAuth 2.0 Client → **Authorized redirect URIs** أضف بالضبط:
+   `https://flsko-api.flsko.workers.dev/api/google/callback`
+2. على خادم الـ API (Workers secrets / env) ضع نفس القيمة في `GOOGLE_OAUTH_REDIRECT_URI`.
+3. لا تستخدم عناوين Manus القديمة (`3000-*.manus.computer`) في الإنتاج.
 
 التحقق من أسماء نماذج Gemini يتغير بمرور الوقت، لذلك يجب تأكيد الاسم من كتالوج Google عند إعداد البيئة. المزود المفتوح للمحادثة متوقع أن يكون متوافقًا مع OpenAI Chat Completions، ويمكن توصيل HuggingChat أو Qwen/Llama عبر endpoint خادمي. مزود البحث المفتوح يستقبل `{ "query": "...", "language": "ar", "include_sources": true }` ويعيد `answer` أو `text` أو `summary`، ويمكنه إعادة قائمة `sources`. عند تفعيله، يبحث Flsko هناك بالتوازي مع قنوات الذكاء الاصطناعي، ثم يقارن النتيجة ويعيد صياغتها بالعربية ولهجة المستخدم. مزود الصورة متوقع أن يعيد `{ "url": "https://.../asset.png" }`، أو يمكن تفعيل Pollinations عبر `FLSKO_POLLINATIONS_API_KEY` لاستخدام FLUX. مزود الفيديو متوقع أن يعيد `{ "url": "https://.../asset.mp4", "job_id": "optional-id" }` ويمكن توصيل CogVideoX أو AnimateDiff أو Wan عبر `FLSKO_VIDEO_PROVIDER_URL`. مزود الموسيقى يستقبل `{ "prompt": "...", "durationSeconds": 30, "instrumental": false }` ويعيد `{ "url": "https://.../asset.mp3", "job_id": "optional-id" }`، ويمكن توصيل ACE-Step أو MusicGen عبر `FLSKO_MUSIC_PROVIDER_URL`. لا يفترض Flsko أن المنصات العامة مجانية أو بلا تسجيل؛ وثائق Pollinations الحالية تتطلب مفتاحًا للتوليد، لذلك لا يضع التطبيق مفتاحًا داخل الهاتف. لا ينشئ Flsko حسابات Gemini أو ChatGPT باسم المستخدم تلقائيًا؛ يستخدم مفاتيح الخادم أو تسجيلًا صريحًا يوافق عليه المستخدم.
 
