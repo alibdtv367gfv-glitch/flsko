@@ -2,14 +2,15 @@
  * Free / public documented media providers — no paid keys required.
  * Legal: only official REST or documented public URL APIs (no scraping).
  *
- * Image layers (4):
- *  1. Pollinations legacy image.pollinations.ai (anonymous)
+ * Image layers (priority order):
+ *  1. Pollinations legacy image.pollinations.ai (anonymous, no key)
  *  2. AI Horde community cluster (anonymous key 0000000000)
- *  3. Pollinations gen.pollinations.ai when FLSKO_POLLINATIONS_API_KEY set
- *  4. Operator FLSKO_IMAGE_PROVIDER_URL (self-hosted open model)
+ *  3. Hugging Face Inference Providers (HF_TOKEN free tier — router / FLUX schnell)
+ *  4. Pollinations gen when FLSKO_POLLINATIONS_API_KEY set
+ *  5. Operator FLSKO_IMAGE_PROVIDER_URL (self-hosted)
  *
- * Video / music: public no-key options are scarce and unstable; we try
- * optional free adapters then degrade gracefully with Arabic status messages.
+ * Chat already uses router.huggingface.co via HF_TOKEN in flsko-ai.ts.
+ * Video / music: self-hosted adapters + optional keys; see adapters/.
  */
 
 import { adaptPromptForVisualProvider } from "../translation-bridge";
@@ -91,7 +92,71 @@ export async function imageAiHorde(prompt: string): Promise<MediaResult> {
   });
 }
 
-/** Layer 3 — Pollinations gen API (free key from enter.pollinations.ai optional). */
+/**
+ * Layer 3 — Hugging Face (عناق الوجه) Inference Providers.
+ * Requires free HF_TOKEN with "Make calls to Inference Providers" permission:
+ * https://huggingface.co/settings/tokens
+ * Uses documented serverless text-to-image (FLUX schnell when available).
+ */
+export async function imageHuggingFace(prompt: string): Promise<MediaResult> {
+  const token = process.env.HF_TOKEN?.trim();
+  if (!token) throw new Error("HF_TOKEN not set");
+  return withCircuitBreaker("img-huggingface", async () => {
+    const adapted = adaptPromptForVisualProvider(prompt, "en");
+    const model =
+      process.env.FLSKO_HF_IMAGE_MODEL?.trim() || "black-forest-labs/FLUX.1-schnell";
+    // Official-style serverless path via router host (HF Inference)
+    const endpoints = [
+      `https://router.huggingface.co/hf-inference/models/${model}`,
+      `https://api-inference.huggingface.co/models/${model}`,
+    ];
+    let lastErr = "hf image failed";
+    for (const endpoint of endpoints) {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+          accept: "image/png, application/json",
+          "user-agent": "Flsko/1.0",
+        },
+        body: JSON.stringify({ inputs: adapted, parameters: { num_inference_steps: 4 } }),
+      });
+      if (res.status === 503) {
+        // model loading
+        await new Promise((r) => setTimeout(r, 8000));
+        continue;
+      }
+      if (!res.ok) {
+        lastErr = `hf-image ${res.status}`;
+        continue;
+      }
+      const ctype = res.headers.get("content-type") || "";
+      if (ctype.includes("image")) {
+        // Return a data URL so the client can display without extra storage
+        const buf = Buffer.from(await res.arrayBuffer());
+        const b64 = buf.toString("base64");
+        const mime = ctype.split(";")[0] || "image/png";
+        return {
+          url: `data:${mime};base64,${b64}`,
+          provider: "huggingface-image",
+          status: "completed",
+        };
+      }
+      // Some providers return JSON with URL
+      try {
+        const payload = (await res.json()) as { url?: string; images?: string[] };
+        const url = payload.url || payload.images?.[0];
+        if (url) return { url, provider: "huggingface-image", status: "completed" };
+      } catch {
+        lastErr = "hf-image bad body";
+      }
+    }
+    throw new Error(lastErr);
+  });
+}
+
+/** Layer 4 — Pollinations gen API (free key from enter.pollinations.ai optional). */
 export async function imagePollinationsKeyed(prompt: string): Promise<MediaResult> {
   const key = process.env.FLSKO_POLLINATIONS_API_KEY?.trim();
   if (!key) throw new Error("pollinations key not set");
@@ -137,6 +202,7 @@ export async function generateImageFourLayers(prompt: string): Promise<MediaResu
   const layers: Array<() => Promise<MediaResult>> = [
     imagePollinationsLegacy,
     imageAiHorde,
+    imageHuggingFace,
     imagePollinationsKeyed,
     imageSelfHosted,
   ];
