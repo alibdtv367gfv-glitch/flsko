@@ -8,22 +8,24 @@ import { arabicAdaptationInstruction } from "./translation-bridge";
 import { generateImageFourLayers, generateMusicFourLayers, generateVideoFourLayers } from "./providers/free-media";
 import { compressConversation, compressMemories, compressUserMessage } from "./connectors/context-mode";
 import { remoteVideoCascade } from "./connectors/remote-media";
+import { generateViaWanSpace } from "./connectors/wan-space";
+import { FlskoEnv, flskoEnvStatus } from "./_core/flsko-env";
 
-const geminiKey = process.env.FLSKO_GEMINI_API_KEY?.trim();
-const openAiKey = process.env.FLSKO_OPENAI_API_KEY?.trim();
-const openAiModel = process.env.FLSKO_OPENAI_MODEL?.trim() || "gpt-4o-mini";
-const openSourceChatUrl = process.env.FLSKO_LLM_PROVIDER_URL?.trim();
-const openSourceChatKey = process.env.FLSKO_LLM_PROVIDER_KEY?.trim();
-const openSourceChatModel = process.env.FLSKO_LLM_MODEL?.trim() || "Qwen/Qwen2.5-7B-Instruct";
-const huggingFaceToken = process.env.HF_TOKEN?.trim();
-const huggingFaceModel = process.env.FLSKO_HF_MODEL?.trim() || "meta-llama/Llama-3.1-8B-Instruct";
-const openResearchUrl = process.env.FLSKO_RESEARCH_PROVIDER_URL?.trim();
-const openResearchKey = process.env.FLSKO_RESEARCH_PROVIDER_KEY?.trim() || openSourceChatKey;
-const openSourceImageUrl = process.env.FLSKO_IMAGE_PROVIDER_URL?.trim();
-const openSourceVideoUrl = process.env.FLSKO_VIDEO_PROVIDER_URL?.trim();
-const openSourceMusicUrl = process.env.FLSKO_MUSIC_PROVIDER_URL?.trim();
-const openSourceMusicKey = process.env.FLSKO_MUSIC_PROVIDER_KEY?.trim();
-const pollinationsKey = process.env.FLSKO_POLLINATIONS_API_KEY?.trim();
+const geminiKey = FlskoEnv.geminiKey;
+const openAiKey = FlskoEnv.openAiKey;
+const openAiModel = FlskoEnv.openAiModel;
+const openSourceChatUrl = FlskoEnv.llmProviderUrl;
+const openSourceChatKey = FlskoEnv.llmProviderKey;
+const openSourceChatModel = FlskoEnv.llmModel;
+const huggingFaceToken = FlskoEnv.hfToken;
+const huggingFaceModel = FlskoEnv.hfChatModel;
+const openResearchUrl = FlskoEnv.researchProviderUrl;
+const openResearchKey = FlskoEnv.researchProviderKey || openSourceChatKey;
+const openSourceImageUrl = FlskoEnv.imageProviderUrl;
+const openSourceVideoUrl = FlskoEnv.videoProviderUrl;
+const openSourceMusicUrl = FlskoEnv.musicProviderUrl;
+const openSourceMusicKey = FlskoEnv.musicProviderKey;
+const pollinationsKey = FlskoEnv.pollinationsKey;
 
 function isHttpUrl(value: string | undefined): value is string {
   if (!value) return false;
@@ -73,7 +75,7 @@ async function callOpenAi(messages: Message[]) {
 
 async function callGemini(messages: Message[]) {
   const started = Date.now();
-  const models = [process.env.FLSKO_GEMINI_MODEL?.trim() || "gemini-2.5-flash", "gemini-flash-latest"].filter((model, index, list) => list.indexOf(model) === index);
+  const models = [FlskoEnv.geminiModel, "gemini-flash-latest"].filter((model, index, list) => list.indexOf(model) === index);
   const prompt = messages.map((message) => `${message.role}: ${extractText(message.content)}`).join("\n\n");
   let lastStatus = 0;
   for (const model of models) {
@@ -225,7 +227,7 @@ export function buildProfileContext(profile?: { displayName?: string | null; gen
 }
 
 async function generateGeminiImage(prompt: string) {
-  const model = process.env.FLSKO_GEMINI_IMAGE_MODEL?.trim() || "gemini-2.5-flash-image";
+  const model = FlskoEnv.geminiImageModel;
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(geminiKey!)}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -261,7 +263,22 @@ export async function createFlskoImage(prompt: string) {
 }
 
 export async function createFlskoVideo(prompt: string) {
-  // Remote open-source GPU hosts first (SkyReels / Allegro / GenStudio) — no local weights
+  // 1) Wan HF Space (FLSKO_WAN_SPACE)
+  try {
+    const wan = await generateViaWanSpace(prompt);
+    if (wan.status === "completed" || (wan.status === "queued" && wan.jobId)) {
+      return {
+        status: wan.status,
+        provider: wan.provider,
+        url: wan.url,
+        jobId: wan.jobId,
+        message: wan.message,
+      };
+    }
+  } catch (error) {
+    console.warn("[Flsko] Wan space failed:", error instanceof Error ? error.message : error);
+  }
+  // 2) Remote open-source GPU hosts
   try {
     const remote = await remoteVideoCascade(prompt);
     if (remote.status === "completed" || remote.status === "queued") {
@@ -288,7 +305,7 @@ export async function createFlskoVideo(prompt: string) {
   }
   if (geminiKey) {
     try {
-      const model = process.env.FLSKO_GEMINI_VIDEO_MODEL?.trim() || "veo-3.1-generate-preview";
+      const model = FlskoEnv.geminiVideoModel;
       const baseUrl = "https://generativelanguage.googleapis.com/v1beta";
       const start = await fetch(`${baseUrl}/models/${model}:predictLongRunning`, {
         method: "POST",
@@ -329,7 +346,7 @@ export async function createFlskoMusic(prompt: string) {
         method: "POST",
         headers: { "content-type": "application/json", "x-goog-api-key": geminiKey },
         body: JSON.stringify({
-          model: process.env.FLSKO_GEMINI_MUSIC_MODEL?.trim() || "lyria-3.5",
+          model: FlskoEnv.geminiMusicModel,
           input: prompt,
           response_format: { type: "audio" },
         }),
@@ -366,5 +383,17 @@ export async function createFlskoMusic(prompt: string) {
 }
 
 export function getFlskoProviderStatus() {
-  return { name: "Flsko", orchestration: "automatic", openSourceSearch: true, music: { openSource: Boolean(openSourceMusicUrl), gemini: Boolean(geminiKey) }, availableChannels: [geminiKey, openAiKey, openSourceChatUrl, huggingFaceToken, openResearchUrl, "wikipedia-ar"].filter(Boolean).length, userSeesModels: false, privacy: "cloud-only-with-consent" } as const;
+  const env = flskoEnvStatus();
+  return {
+    name: "Flsko",
+    orchestration: "automatic",
+    openSourceSearch: true,
+    env,
+    music: { openSource: Boolean(openSourceMusicUrl), gemini: Boolean(geminiKey) },
+    video: { wanSpace: Boolean(FlskoEnv.wanSpace), selfHosted: Boolean(openSourceVideoUrl), gemini: Boolean(geminiKey) },
+    image: { pollinations: true, hf: Boolean(huggingFaceToken), gemini: Boolean(geminiKey) },
+    availableChannels: [geminiKey, openAiKey, openSourceChatUrl, huggingFaceToken, openResearchUrl, "wikipedia-ar", FlskoEnv.wanSpace].filter(Boolean).length,
+    userSeesModels: false,
+    privacy: "cloud-only-with-consent",
+  } as const;
 }
