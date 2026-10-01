@@ -199,7 +199,7 @@ export async function imageSelfHosted(prompt: string): Promise<MediaResult> {
 
 /** Run image layers in order until one completes. */
 export async function generateImageFourLayers(prompt: string): Promise<MediaResult> {
-  const layers: Array<() => Promise<MediaResult>> = [
+  const layers: Array<(prompt: string) => Promise<MediaResult>> = [
     imagePollinationsLegacy,
     imageAiHorde,
     imageHuggingFace,

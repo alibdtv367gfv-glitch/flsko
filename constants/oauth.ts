@@ -31,25 +31,15 @@ export const API_BASE_URL = env.apiBaseUrl;
  * URL pattern: https://PORT-sandboxid.region.domain
  */
 /** Production Cloudflare Workers API */
-const PRODUCTION_API_BASE = "https://flsko-api.flsko.workers.dev";
+const PRODUCTION_API_BASE_URL = "https://flsko-api.flsko.workers.dev";
+const normalizedConfiguredApi = API_BASE_URL.replace(/\/$/, "");
+const isPreviewApi = /(?:localhost|127\.0\.0\.1|(?:^|:)3000-|(?:^|:)8081-|manus\.computer)/i.test(normalizedConfiguredApi);
 
 export function getApiBaseUrl(): string {
-  // Explicit env wins
-  if (API_BASE_URL) {
-    return API_BASE_URL.replace(/\/$/, "");
-  }
-
-  // On web, derive from current hostname by replacing port 8081 with 3000 (local Manus-style dev)
-  if (ReactNative.Platform.OS === "web" && typeof window !== "undefined" && window.location) {
-    const { protocol, hostname } = window.location;
-    const apiHostname = hostname.replace(/^8081-/, "3000-");
-    if (apiHostname !== hostname) {
-      return `${protocol}//${apiHostname}`;
-    }
-  }
-
-  // Mobile / Expo Go / production builds: always hit the live Workers API
-  return PRODUCTION_API_BASE;
+  // OAuth and session requests must never fall back to a preview server.
+  return normalizedConfiguredApi === PRODUCTION_API_BASE_URL && !isPreviewApi
+    ? normalizedConfiguredApi
+    : PRODUCTION_API_BASE_URL;
 }
 
 export const SESSION_TOKEN_KEY = "app_session_token";
@@ -73,7 +63,7 @@ const encodeState = (value: string) => {
  */
 export const getRedirectUri = () => {
   if (ReactNative.Platform.OS === "web") {
-    return `${getApiBaseUrl()}/api/oauth/callback`;
+    return `${getApiBaseUrl()}/api/google/callback`;
   } else {
     return Linking.createURL("/oauth/callback", {
       scheme: env.deepLinkScheme,
@@ -110,6 +100,11 @@ export const getLoginUrl = () => {
 export async function startOAuthLogin(): Promise<string | null> {
   WebBrowser.maybeCompleteAuthSession();
   const loginUrl = getLoginUrl();
+  console.log("[OAuth] Starting production login", {
+    loginUrl,
+    platform: ReactNative.Platform.OS,
+    redirectUri: getRedirectUri(),
+  });
 
   if (ReactNative.Platform.OS === "web") {
     if (typeof window !== "undefined") {
