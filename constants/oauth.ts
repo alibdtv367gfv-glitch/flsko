@@ -1,8 +1,6 @@
 import * as Linking from "expo-linking";
-import * as ReactNative from "react-native";
 import * as WebBrowser from "expo-web-browser";
-
-WebBrowser.maybeCompleteAuthSession();
+import * as ReactNative from "react-native";
 
 // Extract scheme from bundle ID (last segment timestamp, prefixed with "manus")
 // e.g., "space.manus.my.app.t20240115103045" -> "manus20240115103045"
@@ -10,21 +8,13 @@ const bundleId = "com.flsko.app";
 const timestamp = bundleId.split(".").pop()?.replace(/^t/, "") ?? "";
 const schemeFromBundleId = `manus${timestamp}`;
 
-const PRODUCTION_API_BASE_URL = "https://flsko-api.flsko.workers.dev";
-const configuredApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim() ?? "";
-const normalizedConfiguredApi = configuredApiBaseUrl.replace(/\/$/, "");
-const isPreviewApi = /(^|\/\/)(3000-|8081-|localhost(?::|\/)|127\.0\.0\.1)/i.test(normalizedConfiguredApi);
-
 const env = {
   portal: process.env.EXPO_PUBLIC_OAUTH_PORTAL_URL ?? "",
   server: process.env.EXPO_PUBLIC_OAUTH_SERVER_URL ?? "",
   appId: process.env.EXPO_PUBLIC_APP_ID ?? "",
   ownerId: process.env.EXPO_PUBLIC_OWNER_OPEN_ID ?? "",
   ownerName: process.env.EXPO_PUBLIC_OWNER_NAME ?? "",
-  // Never allow a stale Manus/Metro API value to ship in the client bundle.
-  // OAuth must always start at the deployed Worker. A stale preview/API value can
-  // return 403 before Google is opened, so do not trust arbitrary build-time URLs.
-  apiBaseUrl: normalizedConfiguredApi === PRODUCTION_API_BASE_URL && !isPreviewApi ? normalizedConfiguredApi : PRODUCTION_API_BASE_URL,
+  apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? "",
   deepLinkScheme: schemeFromBundleId,
 };
 
@@ -40,22 +30,26 @@ export const API_BASE_URL = env.apiBaseUrl;
  * Metro runs on 8081, API server runs on 3000.
  * URL pattern: https://PORT-sandboxid.region.domain
  */
-export function getApiBaseUrl(): string {
-  // If API_BASE_URL is set, use it
-  if (API_BASE_URL) return PRODUCTION_API_BASE_URL;
+/** Production Cloudflare Workers API */
+const PRODUCTION_API_BASE = "https://flsko-api.flsko.workers.dev";
 
-  // On web, derive from current hostname by replacing port 8081 with 3000
+export function getApiBaseUrl(): string {
+  // Explicit env wins
+  if (API_BASE_URL) {
+    return API_BASE_URL.replace(/\/$/, "");
+  }
+
+  // On web, derive from current hostname by replacing port 8081 with 3000 (local Manus-style dev)
   if (ReactNative.Platform.OS === "web" && typeof window !== "undefined" && window.location) {
     const { protocol, hostname } = window.location;
-    // Pattern: 8081-sandboxid.region.domain -> 3000-sandboxid.region.domain
     const apiHostname = hostname.replace(/^8081-/, "3000-");
     if (apiHostname !== hostname) {
       return `${protocol}//${apiHostname}`;
     }
   }
 
-  // Fallback to empty (will use relative URL)
-  return "";
+  // Mobile / Expo Go / production builds: always hit the live Workers API
+  return PRODUCTION_API_BASE;
 }
 
 export const SESSION_TOKEN_KEY = "app_session_token";
@@ -79,7 +73,7 @@ const encodeState = (value: string) => {
  */
 export const getRedirectUri = () => {
   if (ReactNative.Platform.OS === "web") {
-    return `${getApiBaseUrl()}/api/google/callback`;
+    return `${getApiBaseUrl()}/api/oauth/callback`;
   } else {
     return Linking.createURL("/oauth/callback", {
       scheme: env.deepLinkScheme,
@@ -106,19 +100,18 @@ export const getLoginUrl = () => {
 /**
  * Start OAuth login flow.
  *
- * On native platforms (iOS/Android), open Google's OAuth page in the
- * in-app authentication tab and return through the deep link.
+ * On native platforms (iOS/Android), open the system browser directly so
+ * the OAuth callback returns via deep link to the app.
  *
  * On web, this simply redirects to the login URL.
  *
- * @returns The callback URL when the in-app auth tab reports success.
+ * @returns Always null, the callback is handled via deep link.
  */
 export async function startOAuthLogin(): Promise<string | null> {
+  WebBrowser.maybeCompleteAuthSession();
   const loginUrl = getLoginUrl();
-  console.log("[OAuth] Starting production login", { loginUrl, platform: ReactNative.Platform.OS, redirectUri: getRedirectUri() });
 
   if (ReactNative.Platform.OS === "web") {
-    // On web, just redirect
     if (typeof window !== "undefined") {
       window.location.href = loginUrl;
     }
@@ -126,25 +119,20 @@ export async function startOAuthLogin(): Promise<string | null> {
   }
 
   try {
+    // Prefer system browser / Chrome Custom Tabs (Google blocks embedded WebViews with 403)
     const redirectUri = getRedirectUri();
     const result = await WebBrowser.openAuthSessionAsync(loginUrl, redirectUri, {
       showInRecents: true,
       preferEphemeralSession: false,
+      createTask: false,
     });
-    console.log("[OAuth] In-app auth result", { type: result.type, url: "url" in result ? result.url : null });
-    if (result.type === "success" && "url" in result && result.url) {
-      // Let Expo Router consume the deep-link callback in the app.
-      await Linking.openURL(result.url);
-      return result.url;
-    }
     if (result.type === "cancel" || result.type === "dismiss") {
-      throw new Error("تم إلغاء تسجيل الدخول عبر Google.");
+      return null;
     }
   } catch (error) {
     console.error("[OAuth] Failed to open login URL:", error);
-    throw new Error("تعذر فتح صفحة تسجيل الدخول. تحقق من اتصال الإنترنت وحاول مرة أخرى.");
+    throw new Error("تعذر فتح صفحة تسجيل الدخول. أوقف الـ VPN إن وُجد، وتأكد من الاتصال، ثم أعد المحاولة.");
   }
 
-  // The OAuth callback will reopen the app via deep link.
   return null;
 }

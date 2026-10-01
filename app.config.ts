@@ -124,6 +124,8 @@ const config: ExpoConfig = {
         },
       },
     ],
+    // Offline ONNX TTS (Android). Requires Expo development build — not Expo Go.
+    "./modules/voder-offline/plugin/src/index.js",
   ],
   experiments: {
     typedRoutes: true,

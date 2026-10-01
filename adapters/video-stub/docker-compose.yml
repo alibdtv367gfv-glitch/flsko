@@ -1,0 +1,15 @@
+services:
+  video-adapter:
+    build: .
+    ports:
+      - "8091:8091"
+    environment:
+      FLSKO_VIDEO_BACKEND: frames
+      PUBLIC_BASE: http://127.0.0.1:8091
+      OUTPUT_DIR: /data/output
+    volumes:
+      - video-out:/data/output
+    restart: unless-stopped
+
+volumes:
+  video-out:
