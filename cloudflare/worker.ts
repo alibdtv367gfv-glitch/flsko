@@ -13,6 +13,8 @@ export interface Env {
   FLSKO_MUSIC_PROVIDER_URL?: string;
   FLSKO_VODER_API_URL?: string;
   FLSKO_WAN_SPACE?: string;
+  OPENROUTER_API_KEY?: string;
+  FLSKO_OPENROUTER_MODEL?: string;
   GOOGLE_OAUTH_CLIENT_ID: string;
   GOOGLE_OAUTH_CLIENT_SECRET: string;
   GOOGLE_OAUTH_REDIRECT_URI: string;
@@ -142,14 +144,38 @@ async function trpcInput(request: Request, url: URL) {
 }
 async function runChat(message: string, mode: string, user: Record<string, unknown>, env: Env) {
   const memories = await env.DB.prepare("SELECT content FROM memories WHERE user_id=? AND consent=1 ORDER BY created_at DESC LIMIT 20").bind(user.id).all<{ content: string }>();
-  const routed = await routeWithFallback([{ id: "huggingface-router", kind: "chat", priority: 1, execute: async () => {
-    const response = await fetch("https://router.huggingface.co/v1/chat/completions", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${env.HF_TOKEN}` }, body: JSON.stringify({ model: env.FLSKO_HF_MODEL || "meta-llama/Llama-3.1-8B-Instruct", messages: [{ role: "system", content: `${SYSTEM_PROMPT}\nوضع الإجابة: ${mode}.\nذاكرة المستخدم المصرح بها:\n${memories.results.map((x) => x.content).join("\n")}` }, { role: "user", content: message }], temperature: 0.6, max_tokens: 1000 }) });
+  const system = `${SYSTEM_PROMPT}\nوضع الإجابة: ${mode}.\nذاكرة المستخدم المصرح بها:\n${memories.results.map((x) => x.content).join("\n")}`;
+  const messages = [{ role: "system", content: system }, { role: "user", content: message }];
+  const providers: Array<{ id: string; kind: "chat"; priority: number; execute: () => Promise<string> }> = [];
+  if (env.OPENROUTER_API_KEY) {
+    const orModel = env.FLSKO_OPENROUTER_MODEL || "openrouter/free";
+    providers.push({ id: "openrouter-free", kind: "chat", priority: 1, execute: async () => {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+          "HTTP-Referer": "https://flsko-api.flsko.workers.dev",
+          "X-Title": "Flsko",
+        },
+        body: JSON.stringify({ model: orModel, messages, temperature: 0.6, max_tokens: 1000 }),
+      });
+      const payload = await response.json().catch(() => ({})) as { choices?: Array<{ message?: { content?: unknown } }>; error?: { message?: string } };
+      if (!response.ok) throw new Error(payload.error?.message || `OpenRouter failed: ${response.status}`);
+      const text = payload.choices?.[0]?.message?.content;
+      if (typeof text !== "string" || !text.trim()) throw new Error("OpenRouter returned empty text");
+      return text.trim();
+    }});
+  }
+  providers.push({ id: "huggingface-router", kind: "chat", priority: 2, execute: async () => {
+    const response = await fetch("https://router.huggingface.co/v1/chat/completions", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${env.HF_TOKEN}` }, body: JSON.stringify({ model: env.FLSKO_HF_MODEL || "meta-llama/Llama-3.1-8B-Instruct", messages, temperature: 0.6, max_tokens: 1000 }) });
     const payload = await response.json().catch(() => ({})) as { choices?: Array<{ message?: { content?: unknown } }> };
     if (!response.ok) throw new Error(`تعذر الحصول على رد من مزود النموذج: ${response.status}`);
     const text = payload.choices?.[0]?.message?.content;
     if (typeof text !== "string" || !text.trim()) throw new Error("لم يصل رد نصي من النموذج");
     return text.trim();
-  } }], Date.now(), routerHooks(env));
+  }});
+  const routed = await routeWithFallback(providers, Date.now(), routerHooks(env));
   const text = routed.value;
   await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "user", message).run();
   await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "assistant", text.trim()).run();
