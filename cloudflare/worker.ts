@@ -269,25 +269,70 @@ async function generateOpenMusic(prompt: string, env: Env) {
   return { ...result.value, provider: result.provider, attempted: result.attempted };
 }
 async function submitWanVideo(prompt: string, env: Env) {
-  const space = env.FLSKO_WAN_SPACE || "https://wan-ai-wan2-1.hf.space";
-  const result = await routeWithFallback([{ id: "wan-gradio", kind: "video", priority: 1, execute: async () => {
-    const response = await fetch(`${space.replace(/\/$/, "")}/gradio_api/call/t2v_generation_async`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: [prompt, "1280*720", true, -1] }) });
-    const payload = await response.json().catch(() => ({})) as { event_id?: string };
-    if (!response.ok || !payload.event_id) throw new Error(`Wan Gradio queue failed: ${response.status}`);
-    return { status: "queued" as const, provider: "wan-gradio", jobId: payload.event_id, message: "تم إرسال الفيديو إلى طابور Wan المفتوح. سيحتاج وقتًا للمعالجة بسبب موارد Space المجانية." };
-  } }], Date.now(), routerHooks(env));
+  const space = (env.FLSKO_WAN_SPACE || "https://wan-ai-wan2-1.hf.space").replace(/\/+$/, "");
+  const headers: Record<string, string> = { "content-type": "application/json", accept: "application/json", "user-agent": "Flsko/1.0" };
+  if (env.HF_TOKEN) headers.authorization = `Bearer ${env.HF_TOKEN}`;
+
+  const result = await routeWithFallback([
+    { id: "wan-gradio", kind: "video" as const, priority: 1, execute: async () => {
+      const response = await fetch(`${space}/gradio_api/call/t2v_generation_async`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ data: [prompt.slice(0, 800), "720*1280", false, Math.floor(Math.random() * 999999)] }),
+        signal: AbortSignal.timeout(45_000),
+      });
+      const payload = await response.json().catch(() => ({})) as { event_id?: string };
+      if (!response.ok || !payload.event_id) throw new Error(`Wan Gradio queue failed: ${response.status}`);
+      return {
+        status: "queued" as const,
+        provider: "wan-gradio",
+        jobId: payload.event_id,
+        message: "أُرسل الفيديو عبر Gradio إلى Wan Space. استعلم عبر agent.mediaJob.",
+      };
+    } },
+    ...(env.FLSKO_VIDEO_PROVIDER_URL ? [{ id: "comfy-or-custom", kind: "video" as const, priority: 2, execute: async () => {
+      const response = await fetch(env.FLSKO_VIDEO_PROVIDER_URL!, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify({ prompt, workflow: "t2v" }),
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (!response.ok) throw new Error(`video provider failed: ${response.status}`);
+      const payload = await response.json().catch(() => ({})) as { url?: string; jobId?: string; prompt_id?: string };
+      if (payload.url) return { status: "completed" as const, provider: "custom-video", url: payload.url, message: "فيديو من مزودك الذاتي (ComfyUI/مخصص)." };
+      const id = payload.jobId || payload.prompt_id;
+      if (id) return { status: "queued" as const, provider: "custom-video", jobId: id, message: "مهمة فيديو لدى مزودك." };
+      throw new Error("custom video provider returned no asset");
+    } }] : []),
+  ], Date.now(), routerHooks(env));
   return { ...result.value, provider: result.provider, attempted: result.attempted };
 }
 async function pollWanVideo(jobId: string, env: Env) {
-  const space = env.FLSKO_WAN_SPACE || "https://wan-ai-wan2-1.hf.space";
-  const response = await fetch(`${space.replace(/\/$/, "")}/gradio_api/call/t2v_generation_async/${encodeURIComponent(jobId)}`, { headers: { accept: "text/event-stream" } });
-  const body = await response.text();
-  const complete = body.split("event: complete").pop()?.match(/data:\s*(.+)/)?.[1]?.trim();
-  if (!response.ok || !complete) return { status: "queued" as const, provider: "wan-gradio", jobId, message: "الفيديو ما زال في طابور Wan." };
-  const data = JSON.parse(complete) as Array<{ url?: string; path?: string } | null>;
-  const file = data.find((item) => item && (item.url || item.path));
-  if (!file) return { status: "queued" as const, provider: "wan-gradio", jobId, message: "لم تكتمل مهمة Wan بعد أو أُعيدت دون ملف." };
-  return { status: "completed" as const, provider: "wan-gradio", jobId, url: file.url || file.path, message: "اكتمل فيديو Wan." };
+  const space = (env.FLSKO_WAN_SPACE || "https://wan-ai-wan2-1.hf.space").replace(/\/+$/, "");
+  const headers: Record<string, string> = { accept: "text/event-stream", "user-agent": "Flsko/1.0" };
+  if (env.HF_TOKEN) headers.authorization = `Bearer ${env.HF_TOKEN}`;
+
+  try {
+    const response = await fetch(`${space}/gradio_api/call/t2v_generation_async/${encodeURIComponent(jobId)}`, {
+      headers,
+      signal: AbortSignal.timeout(25_000),
+    });
+    const body = await response.text();
+    const complete = body.split("event: complete").pop()?.match(/data:\s*(.+)/)?.[1]?.trim();
+    if (response.ok && complete) {
+      try {
+        const data = JSON.parse(complete) as unknown;
+        const flat = JSON.stringify(data);
+        const m = flat.match(/https?:\/\/[^"\\s]+\.(mp4|webm)/i) || flat.match(/"url"\s*:\s*"(https?:[^"]+)"/i);
+        if (m) {
+          const url = (m[1] && m[1].startsWith("http") ? m[1] : m[0]).replace(/\\\//g, "/");
+          return { status: "completed" as const, provider: "wan-gradio", jobId, url, message: "اكتمل فيديو Wan عبر Gradio." };
+        }
+      } catch { /* still queued */ }
+    }
+  } catch { /* still queued */ }
+
+  return { status: "queued" as const, provider: "wan-gradio", jobId, message: "الفيديو ما زال في طابور Wan (مساحة مجانية قد تتأخر)." };
 }
 async function trpcInput(request: Request, url: URL) {
   if (request.method === "GET") {
