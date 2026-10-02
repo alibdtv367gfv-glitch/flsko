@@ -86,10 +86,10 @@ async function mediaStatus(env?: Env) {
   return {
     policy: "automatic-best-available",
     router: { mode: "safe-fallback", failureCooldownMs: 60000, health: providerHealthSnapshot(), persistedHealth: persistedHealth.results },
-    image: { selected: env?.FLSKO_IMAGE_PROVIDER_URL ? "configured-open-provider" : "pollinations-flux", layers: [layer("gemini-image", "Gemini Image", "cloud-closed", 1, false, "حصة Gemini الحالية أعادت 429"), layer("configured-open-provider", "مزود صور مفتوح مخصص", "cloud-open", 2, Boolean(env?.FLSKO_IMAGE_PROVIDER_URL), env?.FLSKO_IMAGE_PROVIDER_URL ? "مهيأ" : "لم تتم تهيئته"), layer("pollinations-flux", "Pollinations Flux", "cloud-open", 3, true, "تم اختباره وأعاد JPEG فعليًا"), layer("mobile-sd-lcm", "Stable Diffusion LCM محلي", "on-device", 4, false, "يحتاج حزمة نموذج Android أصلية ولم تُضمّن بعد")] },
+    image: { selected: env?.FLSKO_IMAGE_PROVIDER_URL ? "configured-open-provider" : "pollinations-flux", layers: [layer("configured-open-provider", "مزود صور مخصص", "cloud-open", 1, Boolean(env?.FLSKO_IMAGE_PROVIDER_URL), env?.FLSKO_IMAGE_PROVIDER_URL ? "مهيأ" : "غير مهيأ"), layer("pollinations-flux", "Pollinations Flux", "cloud-open", 2, true, "طبقة أساسية عامة"), layer("ai-horde", "AI Horde", "cloud-open", 3, true, "طوابير مجهولة مجانية"), layer("android-fallback", "واجهة الجهاز", "on-device", 4, true, "رسالة واضحة عند فشل السحابة")] },
     video: { selected: env?.FLSKO_WAN_SPACE ? "wan-gradio" : null, layers: [layer("gemini-veo", "Gemini/Veo", "cloud-closed", 1, false, "حصة Gemini الحالية أعادت 429"), layer("wan-gradio", "Wan 2.1 Gradio Space", "cloud-open-queue", 2, Boolean(env?.FLSKO_WAN_SPACE), env?.FLSKO_WAN_SPACE ? "مهيأ بطابور Gradio" : "لم تتم تهيئته"), layer("wan-provider", "Wan 2.x عبر مزود", "cloud-open", 3, Boolean(env?.FLSKO_VIDEO_PROVIDER_URL), env?.FLSKO_VIDEO_PROVIDER_URL ? "مهيأ" : "لا يوجد عنوان مزود"), layer("cogvideox-provider", "CogVideoX عبر مزود", "cloud-open", 4, false, "لا يوجد عنوان مزود مستقل"), layer("rife-mobile", "RIFE محلي", "on-device", 5, false, "يحتاج محرك صور محليًا ومدخلات إطارات")] },
     music: { selected: env?.FLSKO_VODER_API_URL ? "voder" : null, layers: [layer("gemini-lyria", "Gemini/Lyria", "cloud-closed", 1, false, "حصة Gemini الحالية أعادت 429"), layer("ace-step-provider", "ACE-Step عبر مزود", "cloud-open", 2, Boolean(env?.FLSKO_MUSIC_PROVIDER_URL), env?.FLSKO_MUSIC_PROVIDER_URL ? "مهيأ" : "لا يوجد عنوان مزود"), layer("voder", "VODER / ACE-Step", "self-hosted-open", 3, Boolean(env?.FLSKO_VODER_API_URL), env?.FLSKO_VODER_API_URL ? "مهيأ" : "يحتاج خادم VODER مستقلًا؛ ليس مناسبًا لهاتف عادي"), layer("musicgen-mobile", "MusicGen Small محلي", "on-device", 4, false, "يحتاج نموذج INT8 وتكامل Android أصلي"), layer("audioldm-provider", "AudioLDM عبر مزود", "cloud-open", 5, false, "لا يوجد عنوان مزود مستقل")] },
-    voice: { selected: env?.FLSKO_VODER_API_URL ? "voder" : "android-tts", layers: [layer("android-tts", "Android TTS", "on-device", 1, true, "متاح من خلال Expo Speech حسب أصوات الجهاز"), layer("voder", "VODER Voice Studio", "self-hosted-open", 2, Boolean(env?.FLSKO_VODER_API_URL), env?.FLSKO_VODER_API_URL ? "مهيأ" : "يحتاج خادم VODER مستقلًا؛ متطلباته أعلى من الهاتف"), layer("piper-onnx", "Piper ONNX عربي", "on-device", 3, false, "يحتاج حزمة صوت عربية داخل التطبيق"), layer("whisper-local", "Whisper محلي", "on-device", 4, false, "يحتاج نموذج ONNX محليًا"), layer("managed-whisper", "Whisper سحابي", "cloud-managed", 5, true, "متاح عند تهيئة خدمة التفريغ الخادمية")] },
+    voice: { selected: "android-tts", layers: [layer("android-tts", "Android TTS", "on-device", 1, true, "الأساسي على الجهاز"), layer("streamelements-tts", "StreamElements TTS", "cloud-open", 2, true, "احتياط سحابي مجاني"), layer("google-translate-tts", "Google Translate TTS", "cloud-open", 3, true, "احتياط غير رسمي"), layer("voder", "VODER", "self-hosted-open", 4, Boolean(env?.FLSKO_VODER_API_URL), env?.FLSKO_VODER_API_URL ? "مهيأ" : "يحتاج FLSKO_VODER_API_URL")] },
   };
 }
 async function generateOpenImage(prompt: string, env: Env) {
@@ -103,12 +103,112 @@ async function generateOpenImage(prompt: string, env: Env) {
       return { url, provider: "open-source-configured", status: "completed" as const, message: "تم اختيار مزود الصور المفتوح المهيأ تلقائيًا." };
     } }] : []),
     { id: "pollinations-flux", kind: "image", priority: 2, execute: async () => {
-      const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?model=flux&width=1024&height=1024&nologo=true`;
-      const response = await fetch(url, { headers: { accept: "image/jpeg" } });
+      const seed = Math.floor(Math.random() * 1_000_000);
+      const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?model=flux&width=1024&height=1024&nologo=true&seed=${seed}`;
+      const response = await fetch(url, { headers: { accept: "image/*" }, signal: AbortSignal.timeout(90_000) });
       if (!response.ok) throw new Error(`Pollinations image provider failed: ${response.status}`);
-      return { url, provider: "open-source", status: "completed" as const, message: "تم إنشاء الصورة عبر نموذج مفتوح المصدر." };
+      const ctype = response.headers.get("content-type") || "";
+      if (!ctype.includes("image") && response.headers.get("content-length") === "0") throw new Error("Pollinations returned empty body");
+      return { url, provider: "pollinations-flux", status: "completed" as const, message: "تم إنشاء الصورة عبر Pollinations Flux." };
+    } },
+    { id: "ai-horde", kind: "image", priority: 3, execute: async () => {
+      const submit = await fetch("https://aihorde.net/api/v2/generate/async", {
+        method: "POST",
+        headers: { "content-type": "application/json", apikey: "0000000000", "Client-Agent": "Flsko:1.0" },
+        body: JSON.stringify({ prompt, params: { n: 1, width: 512, height: 512, steps: 20 }, models: ["stable_diffusion"], r2: true }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!submit.ok) throw new Error(`AI Horde submit failed: ${submit.status}`);
+      const job = await submit.json() as { id?: string };
+      if (!job.id) throw new Error("AI Horde returned no job id");
+      for (let i = 0; i < 24; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const check = await fetch(`https://aihorde.net/api/v2/generate/status/${job.id}`, {
+          headers: { apikey: "0000000000", "Client-Agent": "Flsko:1.0" },
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (!check.ok) continue;
+        const st = await check.json() as { done?: boolean; generations?: Array<{ img?: string }> };
+        if (st.done && st.generations?.[0]?.img) {
+          return { url: st.generations[0].img, provider: "ai-horde", status: "completed" as const, message: "تم إنشاء الصورة عبر AI Horde." };
+        }
+      }
+      throw new Error("AI Horde timed out");
     } },
   ], Date.now(), routerHooks(env));
+  return { ...result.value, provider: result.provider, attempted: result.attempted };
+}
+
+/** Cloud TTS fallbacks — Android native remains primary on device. */
+async function generateSpeech(text: string, lang = "ar") {
+  const clipped = text.slice(0, 180);
+  const result = await routeWithFallback([
+    { id: "streamelements-tts", kind: "voice" as const, priority: 1, execute: async () => {
+      const voice = lang.startsWith("ar") ? "Brian" : "Brian";
+      const url = `https://api.streamelements.com/kappa/v2/speech?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(clipped)}`;
+      const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+      if (!response.ok) throw new Error(`StreamElements TTS failed: ${response.status}`);
+      return { url, provider: "streamelements-tts", status: "completed" as const, message: "تم توليد الصوت عبر طبقة سحابية مجانية." };
+    } },
+    { id: "google-translate-tts", kind: "voice" as const, priority: 2, execute: async () => {
+      const tl = lang.startsWith("ar") ? "ar" : "en";
+      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(clipped)}&tl=${tl}&client=tw-ob`;
+      const response = await fetch(url, { headers: { "user-agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(15_000) });
+      if (!response.ok) throw new Error(`Google TTS failed: ${response.status}`);
+      return { url, provider: "google-translate-tts", status: "completed" as const, message: "تم توليد الصوت عبر طبقة احتياطية." };
+    } },
+  ], Date.now());
+  return { ...result.value, provider: result.provider, attempted: result.attempted };
+}
+
+async function generateOpenMusic(prompt: string, env: Env) {
+  const providers: Array<{ id: string; kind: "music"; priority: number; execute: () => Promise<{ url?: string; status: string; provider: string; message: string }> }> = [];
+  if (env.FLSKO_MUSIC_PROVIDER_URL) {
+    providers.push({ id: "music-provider", kind: "music", priority: 1, execute: async () => {
+      const response = await fetch(env.FLSKO_MUSIC_PROVIDER_URL!, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt }),
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (!response.ok) throw new Error(`music provider failed: ${response.status}`);
+      const payload = await response.json().catch(() => ({})) as { url?: string };
+      if (!payload.url) throw new Error("music provider returned no url");
+      return { url: payload.url, provider: "music-provider", status: "completed", message: "تم إنشاء المقطع عبر مزودك." };
+    }});
+  }
+  if (env.FLSKO_VODER_API_URL) {
+    providers.push({ id: "voder", kind: "music", priority: 2, execute: async () => {
+      const response = await fetch(`${env.FLSKO_VODER_API_URL!.replace(/\/+$/, "")}/generate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt }),
+        signal: AbortSignal.timeout(90_000),
+      });
+      if (!response.ok) throw new Error(`VODER failed: ${response.status}`);
+      const payload = await response.json().catch(() => ({})) as { url?: string };
+      if (!payload.url) throw new Error("VODER returned no url");
+      return { url: payload.url, provider: "voder", status: "completed", message: "تم الإنشاء عبر VODER." };
+    }});
+  }
+  // MusicGen public space often cold — mark queued on accept
+  providers.push({ id: "musicgen-space", kind: "music", priority: 3, execute: async () => {
+    const base = "https://facebook-musicgen.hf.space";
+    const call = await fetch(`${base}/gradio_api/call/predict`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ data: [prompt, null, "medium"] }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!call.ok) throw new Error(`MusicGen space failed: ${call.status}`);
+    const body = await call.json().catch(() => ({})) as { event_id?: string };
+    if (body.event_id) {
+      return { status: "queued", provider: "musicgen-space", message: "طلب الموسيقى في طابور MusicGen؛ قد يستغرق دقائق إن كانت المساحة باردة.", url: undefined };
+    }
+    throw new Error("MusicGen space returned no event");
+  }});
+  if (!providers.length) throw new Error("لا يوجد مزود موسيقى");
+  const result = await routeWithFallback(providers, Date.now(), routerHooks(env));
   return { ...result.value, provider: result.provider, attempted: result.attempted };
 }
 async function submitWanVideo(prompt: string, env: Env) {
@@ -175,6 +275,14 @@ async function runChat(message: string, mode: string, user: Record<string, unkno
     if (typeof text !== "string" || !text.trim()) throw new Error("لم يصل رد نصي من النموذج");
     return text.trim();
   }});
+  providers.push({ id: "pollinations-text", kind: "chat", priority: 3, execute: async () => {
+    const q = encodeURIComponent(`${SYSTEM_PROMPT}\nالمستخدم: ${message}\nفلسقوا:`);
+    const response = await fetch(`https://text.pollinations.ai/${q}`, { signal: AbortSignal.timeout(45_000) });
+    if (!response.ok) throw new Error(`Pollinations text failed: ${response.status}`);
+    const text = (await response.text()).trim();
+    if (!text) throw new Error("Pollinations text empty");
+    return text;
+  }});
   const routed = await routeWithFallback(providers, Date.now(), routerHooks(env));
   const text = routed.value;
   await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "user", message).run();
@@ -207,7 +315,8 @@ export default {
         if (path === "agent.chat") { const value = input || {}; const message = typeof value.message === "string" ? value.message.trim() : ""; if (!message || message.length > 6000) return trpcError("الرسالة مطلوبة وبحد أقصى 6000 حرف", 400, origin); const mode = value.mode === "pro-max" ? "برو ماكس" : value.mode === "pro" ? "برو" : "طبيعي وسريع"; return trpcResult(await runChat(message, mode, user, env), origin); }
         if (path === "agent.generate") { const value = input || {}; if (typeof value.prompt !== "string" || value.prompt.trim().length < 3) return trpcError("نوع الوسائط أو الوصف غير صالح", 400, origin); if (value.kind === "video") return trpcResult(await submitWanVideo(value.prompt.trim(), env), origin); if (value.kind !== "image") return trpcError("نوع الوسائط غير صالح", 400, origin); return trpcResult(await generateOpenImage(value.prompt.trim(), env), origin); }
         if (path === "agent.mediaJob") { const value = input || {}; if (typeof value.jobId !== "string" || value.jobId.length < 8) return trpcError("رقم المهمة غير صالح", 400, origin); return trpcResult(await pollWanVideo(value.jobId, env), origin); }
-        if (path === "agent.music") return trpcError("لا يوجد مزود موسيقى صالح حاليًا. لم يتم إنشاء ملف وهمي.", 503, origin);
+        if (path === "agent.music") { const value = input || {}; if (typeof value.prompt !== "string" || value.prompt.trim().length < 3) return trpcError("وصف الموسيقى غير صالح", 400, origin); return trpcResult(await generateOpenMusic(value.prompt.trim(), env), origin); }
+        if (path === "agent.speak") { const value = input || {}; if (typeof value.text !== "string" || value.text.trim().length < 1) return trpcError("النص مطلوب", 400, origin); return trpcResult(await generateSpeech(value.text.trim(), typeof value.lang === "string" ? value.lang : "ar"), origin); }
         return trpcError("المسار غير مدعوم بعد على Cloudflare", 404, origin);
       } catch (error) { return trpcError(error instanceof Error ? error.message : "تعذر تنفيذ الطلب", 500, origin); }
     }
