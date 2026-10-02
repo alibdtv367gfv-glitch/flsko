@@ -86,10 +86,10 @@ async function mediaStatus(env?: Env) {
   return {
     policy: "automatic-best-available",
     router: { mode: "safe-fallback", failureCooldownMs: 60000, health: providerHealthSnapshot(), persistedHealth: persistedHealth.results },
-    image: { selected: env?.FLSKO_IMAGE_PROVIDER_URL ? "configured-open-provider" : "pollinations-flux", layers: [layer("configured-open-provider", "مزود صور مخصص", "cloud-open", 1, Boolean(env?.FLSKO_IMAGE_PROVIDER_URL), env?.FLSKO_IMAGE_PROVIDER_URL ? "مهيأ" : "غير مهيأ"), layer("pollinations-flux", "Pollinations Flux", "cloud-open", 2, true, "طبقة أساسية عامة"), layer("ai-horde", "AI Horde", "cloud-open", 3, true, "طوابير مجهولة مجانية"), layer("android-fallback", "واجهة الجهاز", "on-device", 4, true, "رسالة واضحة عند فشل السحابة")] },
+    image: { selected: env?.FLSKO_IMAGE_PROVIDER_URL ? "configured-open-provider" : "pollinations-flux", layers: [layer("configured-open-provider", "مزود صور مخصص", "cloud-open", 1, Boolean(env?.FLSKO_IMAGE_PROVIDER_URL), env?.FLSKO_IMAGE_PROVIDER_URL ? "مهيأ" : "غير مهيأ"), layer("pollinations-flux", "Pollinations Flux", "cloud-open", 2, true, "طبقة أساسية عامة"), layer("ai-horde", "AI Horde", "cloud-open", 3, true, "طوابير مجهولة مجانية"), layer("pollinations-turbo", "Pollinations Turbo", "cloud-open", 4, true, "احتياط"), layer("lexica-search", "Lexica Search", "unofficial", 5, true, "بحث صور تقريبية غير رسمي")] },
     video: { selected: env?.FLSKO_WAN_SPACE ? "wan-gradio" : null, layers: [layer("gemini-veo", "Gemini/Veo", "cloud-closed", 1, false, "حصة Gemini الحالية أعادت 429"), layer("wan-gradio", "Wan 2.1 Gradio Space", "cloud-open-queue", 2, Boolean(env?.FLSKO_WAN_SPACE), env?.FLSKO_WAN_SPACE ? "مهيأ بطابور Gradio" : "لم تتم تهيئته"), layer("wan-provider", "Wan 2.x عبر مزود", "cloud-open", 3, Boolean(env?.FLSKO_VIDEO_PROVIDER_URL), env?.FLSKO_VIDEO_PROVIDER_URL ? "مهيأ" : "لا يوجد عنوان مزود"), layer("cogvideox-provider", "CogVideoX عبر مزود", "cloud-open", 4, false, "لا يوجد عنوان مزود مستقل"), layer("rife-mobile", "RIFE محلي", "on-device", 5, false, "يحتاج محرك صور محليًا ومدخلات إطارات")] },
-    music: { selected: env?.FLSKO_MUSIC_PROVIDER_URL ? "music-provider" : (env?.FLSKO_VODER_API_URL ? "voder" : "musicgen-space"), layers: [layer("music-provider", "مزود موسيقى مخصص", "cloud-open", 1, Boolean(env?.FLSKO_MUSIC_PROVIDER_URL), env?.FLSKO_MUSIC_PROVIDER_URL ? "مهيأ" : "غير مهيأ"), layer("voder", "VODER", "self-hosted-open", 2, Boolean(env?.FLSKO_VODER_API_URL), env?.FLSKO_VODER_API_URL ? "مهيأ" : "يحتاج FLSKO_VODER_API_URL"), layer("musicgen-space", "MusicGen HF Space", "cloud-open-queue", 3, true, "قد يكون باردًا"), layer("unavailable-msg", "رسالة واضحة", "fallback", 4, true, "لا ملفات وهمية")] },
-    voice: { selected: "android-tts", layers: [layer("android-tts", "Android TTS", "on-device", 1, true, "الأساسي على الجهاز"), layer("streamelements-tts", "StreamElements TTS", "cloud-open", 2, true, "احتياط سحابي مجاني"), layer("google-translate-tts", "Google Translate TTS", "cloud-open", 3, true, "احتياط غير رسمي"), layer("voder", "VODER", "self-hosted-open", 4, Boolean(env?.FLSKO_VODER_API_URL), env?.FLSKO_VODER_API_URL ? "مهيأ" : "يحتاج FLSKO_VODER_API_URL")] },
+    music: { selected: env?.FLSKO_MUSIC_PROVIDER_URL ? "music-provider" : (env?.FLSKO_VODER_API_URL ? "voder" : "musicgen-space"), layers: [layer("music-provider", "مزود موسيقى مخصص", "cloud-open", 1, Boolean(env?.FLSKO_MUSIC_PROVIDER_URL), env?.FLSKO_MUSIC_PROVIDER_URL ? "مهيأ" : "غير مهيأ"), layer("voder", "VODER", "self-hosted-open", 2, Boolean(env?.FLSKO_VODER_API_URL), env?.FLSKO_VODER_API_URL ? "مهيأ" : "يحتاج FLSKO_VODER_API_URL"), layer("bark-music-space", "Bark Space", "unofficial", 3, true, "غير رسمي/طابور"), layer("musicgen-space", "MusicGen HF Space", "cloud-open-queue", 4, true, "قد يكون باردًا"), layer("unavailable-msg", "رسالة واضحة", "fallback", 5, true, "لا ملفات وهمية")] },
+    voice: { selected: "android-tts", layers: [layer("android-tts", "Android TTS", "on-device", 1, true, "الأساسي على الجهاز"), layer("streamelements-tts", "StreamElements TTS", "unofficial", 2, true, "غير رسمي"), layer("google-translate-tts", "Google Translate TTS", "unofficial", 3, true, "غير رسمي"), layer("responsivevoice-tts", "ResponsiveVoice", "unofficial", 4, true, "غير رسمي"), layer("bark-space", "Bark HF Space", "unofficial", 5, true, "طابور عام"), layer("voder", "VODER", "self-hosted-open", 6, Boolean(env?.FLSKO_VODER_API_URL), env?.FLSKO_VODER_API_URL ? "مهيأ" : "يحتاج FLSKO_VODER_API_URL")] },
   };
 }
 async function generateOpenImage(prompt: string, env: Env) {
@@ -135,6 +135,26 @@ async function generateOpenImage(prompt: string, env: Env) {
       }
       throw new Error("AI Horde timed out");
     } },
+    { id: "pollinations-turbo", kind: "image", priority: 4, execute: async () => {
+      const seed = Math.floor(Math.random() * 1_000_000);
+      const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?model=turbo&width=768&height=768&nologo=true&seed=${seed}`;
+      const response = await fetch(url, { headers: { accept: "image/*" }, signal: AbortSignal.timeout(60_000) });
+      if (!response.ok) throw new Error(`Pollinations turbo failed: ${response.status}`);
+      return { url, provider: "pollinations-turbo", status: "completed" as const, message: "صورة عبر Pollinations turbo (احتياط)." };
+    } },
+    { id: "lexica-search", kind: "image", priority: 5, execute: async () => {
+      // Unofficial public search — returns closest existing art, not pure generation
+      const response = await fetch(`https://lexica.art/api/v1/search?q=${encodeURIComponent(prompt.slice(0, 120))}`, {
+        headers: { accept: "application/json", "user-agent": "Mozilla/5.0 Flsko/1.0" },
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!response.ok) throw new Error(`Lexica failed: ${response.status}`);
+      const payload = await response.json().catch(() => ({})) as { images?: Array<{ src?: string; url?: string; imageSrc?: string }> };
+      const img = (payload.images || [])[0];
+      const url = img?.src || img?.url || img?.imageSrc;
+      if (!url) throw new Error("Lexica returned no image");
+      return { url, provider: "lexica-search", status: "completed" as const, message: "صورة تقريبية من Lexica (بحث عام غير رسمي)." };
+    } },
   ], Date.now(), routerHooks(env));
   return { ...result.value, provider: result.provider, attempted: result.attempted };
 }
@@ -155,7 +175,29 @@ async function generateSpeech(text: string, lang = "ar") {
       const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(clipped)}&tl=${tl}&client=tw-ob`;
       const response = await fetch(url, { headers: { "user-agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(15_000) });
       if (!response.ok) throw new Error(`Google TTS failed: ${response.status}`);
-      return { url, provider: "google-translate-tts", status: "completed" as const, message: "تم توليد الصوت عبر طبقة احتياطية." };
+      return { url, provider: "google-translate-tts", status: "completed" as const, message: "تم توليد الصوت عبر طبقة احتياطية غير رسمية." };
+    } },
+    { id: "responsivevoice-tts", kind: "voice" as const, priority: 3, execute: async () => {
+      const tl = lang.startsWith("ar") ? "ar" : "en-US";
+      const url = `https://code.responsivevoice.org/develop/getvoice.php?t=${encodeURIComponent(clipped)}&tl=${encodeURIComponent(tl)}`;
+      const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+      if (!response.ok) throw new Error(`ResponsiveVoice failed: ${response.status}`);
+      return { url, provider: "responsivevoice-tts", status: "completed" as const, message: "صوت عبر ResponsiveVoice (غير رسمي)." };
+    } },
+    { id: "bark-space", kind: "voice" as const, priority: 4, execute: async () => {
+      const base = "https://suno-bark.hf.space";
+      const call = await fetch(`${base}/gradio_api/call/predict`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data: [clipped] }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!call.ok) throw new Error(`Bark space failed: ${call.status}`);
+      const body = await call.json().catch(() => ({})) as { event_id?: string };
+      if (body.event_id) {
+        return { url: undefined as unknown as string, provider: "bark-space", status: "queued" as const, message: "طلب Bark في الطابور (مساحة غير رسمية/عامة)." };
+      }
+      throw new Error("Bark no event");
     } },
   ], Date.now());
   return { ...result.value, provider: result.provider, attempted: result.attempted };
@@ -191,8 +233,23 @@ async function generateOpenMusic(prompt: string, env: Env) {
       return { url: payload.url, provider: "voder", status: "completed", message: "تم الإنشاء عبر VODER." };
     }});
   }
+  providers.push({ id: "bark-music-space", kind: "music", priority: 3, execute: async () => {
+    const base = "https://suno-bark.hf.space";
+    const call = await fetch(`${base}/gradio_api/call/predict`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ data: [prompt.slice(0, 200)] }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!call.ok) throw new Error(`Bark music failed: ${call.status}`);
+    const body = await call.json().catch(() => ({})) as { event_id?: string };
+    if (body.event_id) {
+      return { status: "queued", provider: "bark-space", message: "Bark (غير رسمي/عام) في الطابور.", url: undefined };
+    }
+    throw new Error("Bark music no event");
+  }});
   // MusicGen public space often cold — mark queued on accept
-  providers.push({ id: "musicgen-space", kind: "music", priority: 3, execute: async () => {
+  providers.push({ id: "musicgen-space", kind: "music", priority: 4, execute: async () => {
     const base = "https://facebook-musicgen.hf.space";
     const call = await fetch(`${base}/gradio_api/call/predict`, {
       method: "POST",
