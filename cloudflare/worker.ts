@@ -344,52 +344,133 @@ async function trpcInput(request: Request, url: URL) {
   const body = await request.json().catch(() => null) as Record<string, { json?: unknown }> | null;
   return body?.["0"]?.json ?? null;
 }
+async function openRouterChat(
+  env: Env,
+  model: string,
+  messages: Array<{ role: string; content: string }>,
+  maxTokens: number,
+  temperature: number,
+): Promise<string> {
+  if (!env.OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY missing");
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+      "HTTP-Referer": "https://flsko-api.flsko.workers.dev",
+      "X-Title": "Flsko",
+    },
+    body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens }),
+    signal: AbortSignal.timeout(90_000),
+  });
+  const payload = await response.json().catch(() => ({})) as {
+    choices?: Array<{ message?: { content?: unknown } }>;
+    error?: { message?: string };
+  };
+  if (!response.ok) throw new Error(payload.error?.message || `OpenRouter ${model} failed: ${response.status}`);
+  const text = payload.choices?.[0]?.message?.content;
+  if (typeof text !== "string" || !text.trim()) throw new Error(`OpenRouter ${model} empty`);
+  return text.trim();
+}
+
+/** Mode stacks: natural=2, pro=2, pro-max=4 primary OpenRouter free models + shared backups. */
+function chatModelsForMode(modeLabel: string): { id: string; model: string; maxTokens: number; temperature: number }[] {
+  const isProMax = modeLabel.includes("ماكس") || modeLabel.includes("pro-max");
+  const isPro = !isProMax && (modeLabel.includes("برو") || modeLabel === "pro");
+  if (isProMax) {
+    return [
+      { id: "or-nemotron-ultra", model: "nvidia/nemotron-3-ultra-550b-a55b:free", maxTokens: 1800, temperature: 0.45 },
+      { id: "or-nemotron-super", model: "nvidia/nemotron-3-super-120b-a12b:free", maxTokens: 1600, temperature: 0.5 },
+      { id: "or-gemma-31b", model: "google/gemma-4-31b-it:free", maxTokens: 1600, temperature: 0.5 },
+      { id: "or-inkling", model: "thinkingmachines/inkling:free", maxTokens: 1600, temperature: 0.5 },
+    ];
+  }
+  if (isPro) {
+    return [
+      { id: "or-qwen-27b", model: "qwen/qwen3.8-27b:free", maxTokens: 1200, temperature: 0.55 },
+      { id: "or-gemma-26b", model: "google/gemma-4-26b-a4b-it:free", maxTokens: 1200, temperature: 0.55 },
+    ];
+  }
+  // طبيعي — سريع وخفيف
+  return [
+    { id: "or-apodex-mini", model: "apodex/apodex-1.1-mini:free", maxTokens: 700, temperature: 0.65 },
+    { id: "or-liquid-lfm", model: "liquid/lfm-2.5-2.6b:free", maxTokens: 700, temperature: 0.65 },
+  ];
+}
+
 async function runChat(message: string, mode: string, user: Record<string, unknown>, env: Env) {
   const memories = await env.DB.prepare("SELECT content FROM memories WHERE user_id=? AND consent=1 ORDER BY created_at DESC LIMIT 20").bind(user.id).all<{ content: string }>();
   const system = `${SYSTEM_PROMPT}\nوضع الإجابة: ${mode}.\nذاكرة المستخدم المصرح بها:\n${memories.results.map((x) => x.content).join("\n")}`;
   const messages = [{ role: "system", content: system }, { role: "user", content: message }];
   const providers: Array<{ id: string; kind: "chat"; priority: number; execute: () => Promise<string> }> = [];
-  if (env.OPENROUTER_API_KEY) {
-    const orModel = env.FLSKO_OPENROUTER_MODEL || "openrouter/free";
-    providers.push({ id: "openrouter-free", kind: "chat", priority: 1, execute: async () => {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+
+  const stack = chatModelsForMode(mode);
+  stack.forEach((entry, index) => {
+    providers.push({
+      id: entry.id,
+      kind: "chat",
+      priority: index + 1,
+      execute: () => openRouterChat(env, entry.model, messages, entry.maxTokens, entry.temperature),
+    });
+  });
+
+  // Shared backups after mode stack
+  providers.push({
+    id: "or-free-router",
+    kind: "chat",
+    priority: stack.length + 1,
+    execute: () => openRouterChat(env, env.FLSKO_OPENROUTER_MODEL || "openrouter/free", messages, 1000, 0.6),
+  });
+  providers.push({
+    id: "huggingface-router",
+    kind: "chat",
+    priority: stack.length + 2,
+    execute: async () => {
+      const response = await fetch("https://router.huggingface.co/v1/chat/completions", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-          "HTTP-Referer": "https://flsko-api.flsko.workers.dev",
-          "X-Title": "Flsko",
-        },
-        body: JSON.stringify({ model: orModel, messages, temperature: 0.6, max_tokens: 1000 }),
+        headers: { "content-type": "application/json", authorization: `Bearer ${env.HF_TOKEN}` },
+        body: JSON.stringify({
+          model: env.FLSKO_HF_MODEL || "meta-llama/Llama-3.1-8B-Instruct",
+          messages,
+          temperature: 0.6,
+          max_tokens: 1000,
+        }),
+        signal: AbortSignal.timeout(60_000),
       });
-      const payload = await response.json().catch(() => ({})) as { choices?: Array<{ message?: { content?: unknown } }>; error?: { message?: string } };
-      if (!response.ok) throw new Error(payload.error?.message || `OpenRouter failed: ${response.status}`);
+      const payload = await response.json().catch(() => ({})) as { choices?: Array<{ message?: { content?: unknown } }> };
+      if (!response.ok) throw new Error(`HF failed: ${response.status}`);
       const text = payload.choices?.[0]?.message?.content;
-      if (typeof text !== "string" || !text.trim()) throw new Error("OpenRouter returned empty text");
+      if (typeof text !== "string" || !text.trim()) throw new Error("HF empty");
       return text.trim();
-    }});
-  }
-  providers.push({ id: "huggingface-router", kind: "chat", priority: 2, execute: async () => {
-    const response = await fetch("https://router.huggingface.co/v1/chat/completions", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${env.HF_TOKEN}` }, body: JSON.stringify({ model: env.FLSKO_HF_MODEL || "meta-llama/Llama-3.1-8B-Instruct", messages, temperature: 0.6, max_tokens: 1000 }) });
-    const payload = await response.json().catch(() => ({})) as { choices?: Array<{ message?: { content?: unknown } }> };
-    if (!response.ok) throw new Error(`تعذر الحصول على رد من مزود النموذج: ${response.status}`);
-    const text = payload.choices?.[0]?.message?.content;
-    if (typeof text !== "string" || !text.trim()) throw new Error("لم يصل رد نصي من النموذج");
-    return text.trim();
-  }});
-  providers.push({ id: "pollinations-text", kind: "chat", priority: 3, execute: async () => {
-    const q = encodeURIComponent(`${SYSTEM_PROMPT}\nالمستخدم: ${message}\nفلسقوا:`);
-    const response = await fetch(`https://text.pollinations.ai/${q}`, { signal: AbortSignal.timeout(45_000) });
-    if (!response.ok) throw new Error(`Pollinations text failed: ${response.status}`);
-    const text = (await response.text()).trim();
-    if (!text) throw new Error("Pollinations text empty");
-    return text;
-  }});
+    },
+  });
+  providers.push({
+    id: "pollinations-text",
+    kind: "chat",
+    priority: stack.length + 3,
+    execute: async () => {
+      const q = encodeURIComponent(`${SYSTEM_PROMPT}\nالمستخدم: ${message}\nفلسقوا:`);
+      const response = await fetch(`https://text.pollinations.ai/${q}`, { signal: AbortSignal.timeout(45_000) });
+      if (!response.ok) throw new Error(`Pollinations text failed: ${response.status}`);
+      const text = (await response.text()).trim();
+      if (!text) throw new Error("Pollinations text empty");
+      return text;
+    },
+  });
+
   const routed = await routeWithFallback(providers, Date.now(), routerHooks(env));
   const text = routed.value;
   await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "user", message).run();
   await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "assistant", text.trim()).run();
-  return { text: text.trim(), provider: "orchestrator", sourceId: routed.provider, compared: routed.attempted.length, attempted: routed.attempted };
+  return {
+    text: text.trim(),
+    provider: "orchestrator",
+    sourceId: routed.provider,
+    mode,
+    stack: stack.map((s) => s.model),
+    compared: routed.attempted.length,
+    attempted: routed.attempted,
+  };
 }
 
 export default {
