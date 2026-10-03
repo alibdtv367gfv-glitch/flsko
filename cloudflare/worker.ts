@@ -382,7 +382,7 @@ async function geminiChat(
   maxTokens: number,
 ): Promise<string> {
   if (!env.FLSKO_GEMINI_API_KEY) throw new Error("FLSKO_GEMINI_API_KEY missing");
-  const model = env.FLSKO_GEMINI_MODEL || "gemini-2.0-flash";
+  const model = env.FLSKO_GEMINI_MODEL || "gemini-3.8-flash";
   const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n");
   const contents = messages
     .filter((m) => m.role !== "system")
