@@ -39,7 +39,7 @@ export default function HomeScreen() {
   const colors = useColors();
   const { user, isAuthenticated } = useAuth();
   const { colorScheme, setColorScheme } = useThemeContext();
-  const status = trpc.agent.status.useQuery();
+  const status = trpc.agent.status.useQuery(undefined, { staleTime: 20_000, refetchInterval: 120_000 });
   const orchestrationReady = status.data?.orchestration === "automatic";
   const greeting = useMemo(() => user?.name ? `أهلًا ${user.name.split(" ")[0]}` : "أهلًا بك", [user?.name]);
 

@@ -88,10 +88,73 @@ function routerHooks(env: Env) {
 }
 
 function corsHeaders(origin: string | null): HeadersInit {
-  return { "Access-Control-Allow-Origin": origin || "*", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization", "Access-Control-Allow-Credentials": "true", "Access-Control-Max-Age": "86400" };
+  return {
+    "Access-Control-Allow-Origin": origin || "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Flsko-Tutor-Secret, X-Flsko-Tutor",
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Max-Age": "86400",
+  };
 }
-function json(value: unknown, status = 200, origin: string | null = null) {
-  return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json; charset=utf-8", ...corsHeaders(origin) } });
+
+/** In-isolate memory cache for hot read-only payloads (media status, version, etc.). */
+const memoryCache = new Map<string, { exp: number; body: string }>();
+
+function memoryGet(key: string): string | null {
+  const hit = memoryCache.get(key);
+  if (!hit) return null;
+  if (Date.now() > hit.exp) {
+    memoryCache.delete(key);
+    return null;
+  }
+  return hit.body;
+}
+
+function memorySet(key: string, value: unknown, ttlMs: number) {
+  memoryCache.set(key, { exp: Date.now() + ttlMs, body: JSON.stringify(value) });
+  // Soft bound: drop oldest-ish entries if map grows
+  if (memoryCache.size > 80) {
+    const first = memoryCache.keys().next().value;
+    if (first) memoryCache.delete(first);
+  }
+}
+
+function json(
+  value: unknown,
+  status = 200,
+  origin: string | null = null,
+  cacheControl?: string,
+) {
+  const headers: Record<string, string> = {
+    "content-type": "application/json; charset=utf-8",
+    ...corsHeaders(origin) as Record<string, string>,
+  };
+  if (cacheControl) headers["cache-control"] = cacheControl;
+  else headers["cache-control"] = "no-store";
+  return new Response(JSON.stringify(value), { status, headers });
+}
+
+function jsonCached(key: string, ttlMs: number, origin: string | null, producer: () => unknown | Promise<unknown>, edgeMaxAgeSec?: number) {
+  return (async () => {
+    const cached = memoryGet(key);
+    const edge = edgeMaxAgeSec
+      ? `public, max-age=${edgeMaxAgeSec}, s-maxage=${edgeMaxAgeSec}, stale-while-revalidate=${edgeMaxAgeSec * 2}`
+      : `public, max-age=${Math.max(5, Math.floor(ttlMs / 1000))}`;
+    if (cached) {
+      return new Response(cached, {
+        status: 200,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "x-flsko-cache": "HIT",
+          "cache-control": edge,
+          ...corsHeaders(origin) as Record<string, string>,
+        },
+      });
+    }
+    const value = await producer();
+    memorySet(key, value, ttlMs);
+    return json(value, 200, origin, edge);
+  })();
 }
 function redirect(url: string, origin: string | null = null) { return new Response(null, { status: 302, headers: { Location: url, ...corsHeaders(origin) } }); }
 function legalPage(title: string, body: string) { return new Response(`<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} — Flsko</title><style>body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:760px;margin:40px auto;padding:0 20px;line-height:2;color:#172033;background:#f8fafc}main{background:white;border:1px solid #dbe4ee;border-radius:20px;padding:28px}h1{color:#087ea4}a{color:#087ea4}</style><main><p><b>Flsko · فلسقوا</b></p><h1>${title}</h1>${body}<hr><p><a href="https://flsko-api.flsko.workers.dev/download">صفحة التنزيل الرسمية</a> · <a href="https://flsko-api.flsko.workers.dev/privacy">سياسة الخصوصية</a> · <a href="https://flsko-api.flsko.workers.dev/terms">شروط الاستخدام</a></p><p>© 2026 علي يوسف · Flsko</p></main></html>`, { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=3600" } }); }
@@ -1076,10 +1139,10 @@ export default {
     const origin = request.headers.get("Origin");
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(origin) });
     const url = new URL(request.url);
-    if (url.pathname === "/" || url.pathname === "/api/health") return json({ ok: true, service: "flsko-api", database: "d1", timestamp: Date.now() }, 200, origin);
+    if (url.pathname === "/" || url.pathname === "/api/health") return json({ ok: true, service: "flsko-api", database: "d1", timestamp: Date.now() }, 200, origin, "public, max-age=10");
     // App version / OTA policy — clients poll this for flexible upgrades
     if (url.pathname === "/api/app/version" && request.method === "GET") {
-      return json({
+      return jsonCached("app-version", 60_000, origin, () => ({
         minVersion: "1.0.0",
         latestVersion: "1.0.1",
         otaEnabled: true,
@@ -1096,7 +1159,7 @@ export default {
           mediaMusic: true,
         },
         updatedAt: Date.now(),
-      }, 200, origin);
+      }), 60);
     }
     // Placeholder Expo Updates manifest endpoint (EAS hosts real manifests; this documents channel)
     if (url.pathname === "/api/app/manifest" && request.method === "GET") {
@@ -1125,7 +1188,30 @@ export default {
       try {
         const input = await trpcInput(request, url) as Record<string, unknown> | null;
         const user = await currentUser(request, env);
-        if (path === "system.health" || path === "agent.status" || path === "media.status") return trpcResult(path === "system.health" ? { status: "ok", service: "flsko" } : path === "media.status" ? await mediaStatus(env) : { name: "Flsko", orchestration: "automatic", openSourceSearch: true, userSeesModels: false, privacy: "cloud-only-with-consent" }, origin);
+        if (path === "system.health") return trpcResult({ status: "ok", service: "flsko", cached: false }, origin);
+        if (path === "agent.status") {
+          const body = await jsonCached("agent-status", 15_000, origin, async () => ({
+            name: "Flsko",
+            orchestration: "automatic",
+            openSourceSearch: true,
+            userSeesModels: false,
+            privacy: "cloud-only-with-consent",
+            brain: true,
+          }), 15);
+          // tRPC shape
+          const data = JSON.parse(await body.text());
+          return trpcResult(data, origin);
+        }
+        if (path === "media.status") {
+          const payload = await (async () => {
+            const hit = memoryGet("media-status");
+            if (hit) return JSON.parse(hit);
+            const fresh = await mediaStatus(env);
+            memorySet("media-status", fresh, 20_000);
+            return fresh;
+          })();
+          return trpcResult(payload, origin);
+        }
         if (path === "auth.me") return trpcResult(user, origin);
         if (path === "auth.logout") { const token = getBearer(request) || getCookie(request, "app_session_id"); if (token) await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(await sha256(token)).run(); return trpcResult({ success: true }, origin); }
         if (!user) return trpcError("تسجيل الدخول مطلوب", 401, origin);

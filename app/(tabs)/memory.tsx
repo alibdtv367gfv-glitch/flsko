@@ -25,9 +25,9 @@ export default function MemoryScreen() {
   const [chatBackground, setChatBackground] = useState("#F4F8F7");
   const [voiceGender, setVoiceGender] = useState<"male" | "female">("female");
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>();
-  const memories = trpc.memory.list.useQuery(undefined, { enabled: isAuthenticated });
-  const sources = trpc.knowledge.list.useQuery(undefined, { enabled: isAuthenticated });
-  const profile = trpc.profile.get.useQuery(undefined, { enabled: isAuthenticated });
+  const memories = trpc.memory.list.useQuery(undefined, { enabled: isAuthenticated, staleTime: 30_000 });
+  const sources = trpc.knowledge.list.useQuery(undefined, { enabled: isAuthenticated, staleTime: 60_000 });
+  const profile = trpc.profile.get.useQuery(undefined, { enabled: isAuthenticated, staleTime: 60_000 });
   const remember = trpc.memory.remember.useMutation({ onSuccess: () => { setMemory(""); void memories.refetch(); }, onError: (error) => Alert.alert("لم تُحفظ الذاكرة", error.message) });
   const submitSource = trpc.knowledge.submitPublicSource.useMutation({ onSuccess: () => { setSource(""); void sources.refetch(); }, onError: (error) => Alert.alert("الرابط غير صالح", error.message) });
   const saveProfile = trpc.profile.save.useMutation({ onSuccess: (saved) => { if (saved) setAvatarUrl(saved.avatarUrl || undefined); void profile.refetch(); Alert.alert("تم الحفظ", "سيستخدم فلسقوا هذه المعلومات لفهمك بشكل أفضل."); }, onError: (error) => Alert.alert("لم يُحفظ الملف", error.message) });

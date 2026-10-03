@@ -87,10 +87,16 @@ export default function RootLayout() {
       new QueryClient({
         defaultOptions: {
           queries: {
-            // Disable automatic refetching on window focus for mobile
             refetchOnWindowFocus: false,
-            // Retry failed requests once
+            refetchOnReconnect: true,
             retry: 1,
+            staleTime: 30_000,
+            gcTime: 5 * 60_000,
+            networkMode: "offlineFirst",
+          },
+          mutations: {
+            retry: 0,
+            networkMode: "online",
           },
         },
       }),

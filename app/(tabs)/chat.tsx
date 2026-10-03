@@ -29,8 +29,8 @@ function voiceMatches(voice: DeviceVoice, gender: VoiceGender) {
 export default function ChatScreen() {
   const colors = useColors();
   const { isAuthenticated } = useAuth();
-  const profile = trpc.profile.get.useQuery(undefined, { enabled: isAuthenticated });
-  const files = trpc.files.list.useQuery(undefined, { enabled: isAuthenticated });
+  const profile = trpc.profile.get.useQuery(undefined, { enabled: isAuthenticated, staleTime: 60_000 });
+  const files = trpc.files.list.useQuery(undefined, { enabled: isAuthenticated, staleTime: 45_000 });
   const [draft, setDraft] = useState("");
   const [voiceGender, setVoiceGender] = useState<VoiceGender>("female");
   const [chatMode, setChatMode] = useState<ChatMode>("natural");

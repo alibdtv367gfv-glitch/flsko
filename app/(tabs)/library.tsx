@@ -16,7 +16,7 @@ export default function LibraryScreen() {
   const colors = useColors();
   const { isAuthenticated } = useAuth();
   const [filter, setFilter] = useState<Filter>("all");
-  const files = trpc.files.list.useQuery(undefined, { enabled: isAuthenticated });
+  const files = trpc.files.list.useQuery(undefined, { enabled: isAuthenticated, staleTime: 45_000 });
   const upload = trpc.files.upload.useMutation({ onSuccess: () => void files.refetch(), onError: (error) => Alert.alert("تعذر رفع الملف", error.message) });
   const remove = trpc.files.delete.useMutation({ onSuccess: () => void files.refetch(), onError: (error) => Alert.alert("تعذر حذف الملف", error.message) });
   const visible = useMemo(() => files.data?.filter((file) => filter === "all" || file.kind === filter) || [], [files.data, filter]);
