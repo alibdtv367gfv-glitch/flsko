@@ -97,7 +97,7 @@ async function mediaStatus(env?: Env) {
     image: { selected: env?.FLSKO_IMAGE_PROVIDER_URL ? "configured-open-provider" : "pollinations-flux", layers: [layer("configured-open-provider", "مزود صور مخصص", "cloud-open", 1, Boolean(env?.FLSKO_IMAGE_PROVIDER_URL), env?.FLSKO_IMAGE_PROVIDER_URL ? "مهيأ" : "غير مهيأ"), layer("pollinations-flux", "Pollinations Flux", "cloud-open", 2, true, "طبقة أساسية عامة"), layer("ai-horde", "AI Horde", "cloud-open", 3, true, "طوابير مجهولة مجانية"), layer("pollinations-turbo", "Pollinations Turbo", "cloud-open", 4, true, "احتياط"), layer("lexica-search", "Lexica Search", "unofficial", 5, true, "بحث صور تقريبية غير رسمي")] },
     video: { selected: env?.FLSKO_WAN_SPACE ? "wan-gradio" : null, layers: [layer("gemini-veo", "Gemini/Veo", "cloud-closed", 1, false, "حصة Gemini الحالية أعادت 429"), layer("wan-gradio", "Wan 2.1 Gradio Space", "cloud-open-queue", 2, Boolean(env?.FLSKO_WAN_SPACE), env?.FLSKO_WAN_SPACE ? "مهيأ بطابور Gradio" : "لم تتم تهيئته"), layer("wan-provider", "Wan 2.x عبر مزود", "cloud-open", 3, Boolean(env?.FLSKO_VIDEO_PROVIDER_URL), env?.FLSKO_VIDEO_PROVIDER_URL ? "مهيأ" : "لا يوجد عنوان مزود"), layer("cogvideox-provider", "CogVideoX عبر مزود", "cloud-open", 4, false, "لا يوجد عنوان مزود مستقل"), layer("rife-mobile", "RIFE محلي", "on-device", 5, false, "يحتاج محرك صور محليًا ومدخلات إطارات")] },
     music: { selected: env?.FLSKO_MUSIC_PROVIDER_URL ? "music-provider" : (env?.FLSKO_VODER_API_URL ? "voder" : "musicgen-space"), layers: [layer("music-provider", "مزود موسيقى مخصص", "cloud-open", 1, Boolean(env?.FLSKO_MUSIC_PROVIDER_URL), env?.FLSKO_MUSIC_PROVIDER_URL ? "مهيأ" : "غير مهيأ"), layer("voder", "VODER", "self-hosted-open", 2, Boolean(env?.FLSKO_VODER_API_URL), env?.FLSKO_VODER_API_URL ? "مهيأ" : "يحتاج FLSKO_VODER_API_URL"), layer("bark-music-space", "Bark Space", "unofficial", 3, true, "غير رسمي/طابور"), layer("musicgen-space", "MusicGen HF Space", "cloud-open-queue", 4, true, "قد يكون باردًا"), layer("unavailable-msg", "رسالة واضحة", "fallback", 5, true, "لا ملفات وهمية")] },
-    voice: { selected: "android-tts", layers: [layer("android-tts", "Android TTS", "on-device", 1, true, "الأساسي على الجهاز"), layer("streamelements-tts", "StreamElements TTS", "unofficial", 2, true, "غير رسمي"), layer("google-translate-tts", "Google Translate TTS", "unofficial", 3, true, "غير رسمي"), layer("responsivevoice-tts", "ResponsiveVoice", "unofficial", 4, true, "غير رسمي"), layer("bark-space", "Bark HF Space", "unofficial", 5, true, "طابور عام"), layer("voder", "VODER", "self-hosted-open", 6, Boolean(env?.FLSKO_VODER_API_URL), env?.FLSKO_VODER_API_URL ? "مهيأ" : "يحتاج FLSKO_VODER_API_URL")] },
+    voice: { selected: "android-tts", layers: [layer("android-tts", "Android TTS", "on-device", 1, true, "الأساسي على الجهاز"), layer("qwen3-tts", "Qwen3-TTS Space", "cloud-open-queue", 2, true, "اختُبر وأعاد ملف صوت"), layer("google-translate-tts", "Google Translate TTS", "unofficial", 3, true, "غير رسمي"), layer("responsivevoice-tts", "ResponsiveVoice", "unofficial", 4, true, "غير رسمي"), layer("voder", "VODER", "self-hosted-open", 5, Boolean(env?.FLSKO_VODER_API_URL), env?.FLSKO_VODER_API_URL ? "مهيأ" : "يحتاج FLSKO_VODER_API_URL")] },
   };
 }
 async function generateOpenImage(prompt: string, env: Env) {
@@ -169,43 +169,55 @@ async function generateOpenImage(prompt: string, env: Env) {
 
 /** Cloud TTS fallbacks — Android native remains primary on device. */
 async function generateSpeech(text: string, lang = "ar") {
-  const clipped = text.slice(0, 180);
+  const clipped = text.slice(0, 220);
   const result = await routeWithFallback([
-    { id: "streamelements-tts", kind: "voice" as const, priority: 1, execute: async () => {
-      const voice = lang.startsWith("ar") ? "Brian" : "Brian";
-      const url = `https://api.streamelements.com/kappa/v2/speech?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(clipped)}`;
-      const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
-      if (!response.ok) throw new Error(`StreamElements TTS failed: ${response.status}`);
-      return { url, provider: "streamelements-tts", status: "completed" as const, message: "تم توليد الصوت عبر طبقة سحابية مجانية." };
+    // Qwen3-TTS public Gradio Space — tested: returns direct audio.wav URL
+    { id: "qwen3-tts", kind: "voice" as const, priority: 1, execute: async () => {
+      const base = "https://qwen-qwen3-tts-demo.hf.space";
+      const voice = lang.startsWith("ar") ? "Cherry / 芊悦" : "Ethan / 晨煦";
+      const call = await fetch(`${base}/gradio_api/call/tts_interface`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data: [clipped, voice, "Auto / 自动"] }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!call.ok) throw new Error(`Qwen3-TTS queue failed: ${call.status}`);
+      const queued = await call.json().catch(() => ({})) as { event_id?: string };
+      if (!queued.event_id) throw new Error("Qwen3-TTS no event_id");
+      // Poll SSE briefly for completed file URL
+      for (let i = 0; i < 12; i++) {
+        await new Promise((r) => setTimeout(r, 2500));
+        const stream = await fetch(`${base}/gradio_api/call/tts_interface/${encodeURIComponent(queued.event_id)}`, {
+          headers: { accept: "text/event-stream" },
+          signal: AbortSignal.timeout(20_000),
+        });
+        const body = await stream.text();
+        if (!body.includes("event: complete")) continue;
+        const line = body.split("event: complete").pop()?.match(/data:\s*(.+)/)?.[1]?.trim();
+        if (!line) continue;
+        try {
+          const data = JSON.parse(line) as Array<{ url?: string } | null>;
+          const file = data.find((x) => x && x.url);
+          if (file?.url) {
+            return { url: file.url, provider: "qwen3-tts", status: "completed" as const, message: "صوت عبر Qwen3-TTS (مساحة عامة)." };
+          }
+        } catch { /* keep polling */ }
+      }
+      throw new Error("Qwen3-TTS timed out");
     } },
     { id: "google-translate-tts", kind: "voice" as const, priority: 2, execute: async () => {
       const tl = lang.startsWith("ar") ? "ar" : "en";
       const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(clipped)}&tl=${tl}&client=tw-ob`;
       const response = await fetch(url, { headers: { "user-agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(15_000) });
       if (!response.ok) throw new Error(`Google TTS failed: ${response.status}`);
-      return { url, provider: "google-translate-tts", status: "completed" as const, message: "تم توليد الصوت عبر طبقة احتياطية غير رسمية." };
+      return { url, provider: "google-translate-tts", status: "completed" as const, message: "صوت عبر Google Translate TTS (غير رسمي)." };
     } },
     { id: "responsivevoice-tts", kind: "voice" as const, priority: 3, execute: async () => {
       const tl = lang.startsWith("ar") ? "ar" : "en-US";
       const url = `https://code.responsivevoice.org/develop/getvoice.php?t=${encodeURIComponent(clipped)}&tl=${encodeURIComponent(tl)}`;
       const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
       if (!response.ok) throw new Error(`ResponsiveVoice failed: ${response.status}`);
-      return { url, provider: "responsivevoice-tts", status: "completed" as const, message: "صوت عبر ResponsiveVoice (غير رسمي)." };
-    } },
-    { id: "bark-space", kind: "voice" as const, priority: 4, execute: async () => {
-      const base = "https://suno-bark.hf.space";
-      const call = await fetch(`${base}/gradio_api/call/predict`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ data: [clipped] }),
-        signal: AbortSignal.timeout(30_000),
-      });
-      if (!call.ok) throw new Error(`Bark space failed: ${call.status}`);
-      const body = await call.json().catch(() => ({})) as { event_id?: string };
-      if (body.event_id) {
-        return { url: undefined as unknown as string, provider: "bark-space", status: "queued" as const, message: "طلب Bark في الطابور (مساحة غير رسمية/عامة)." };
-      }
-      throw new Error("Bark no event");
+      return { url, provider: "responsivevoice-tts", status: "completed" as const, message: "صوت عبر ResponsiveVoice." };
     } },
   ], Date.now());
   return { ...result.value, provider: result.provider, attempted: result.attempted };
