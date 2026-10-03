@@ -15,6 +15,8 @@ export interface Env {
   FLSKO_WAN_SPACE?: string;
   OPENROUTER_API_KEY?: string;
   FLSKO_OPENROUTER_MODEL?: string;
+  FLSKO_GEMINI_API_KEY?: string;
+  FLSKO_GEMINI_MODEL?: string;
   GOOGLE_OAUTH_CLIENT_ID: string;
   GOOGLE_OAUTH_CLIENT_SECRET: string;
   GOOGLE_OAUTH_REDIRECT_URI: string;
@@ -373,6 +375,42 @@ async function openRouterChat(
   return text.trim();
 }
 
+
+async function geminiChat(
+  env: Env,
+  messages: Array<{ role: string; content: string }>,
+  maxTokens: number,
+): Promise<string> {
+  if (!env.FLSKO_GEMINI_API_KEY) throw new Error("FLSKO_GEMINI_API_KEY missing");
+  const model = env.FLSKO_GEMINI_MODEL || "gemini-2.0-flash";
+  const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n");
+  const contents = messages
+    .filter((m) => m.role !== "system")
+    .map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    }));
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(env.FLSKO_GEMINI_API_KEY)}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      system_instruction: system ? { parts: [{ text: system }] } : undefined,
+      contents,
+      generationConfig: { maxOutputTokens: maxTokens, temperature: 0.6 },
+    }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const payload = await response.json().catch(() => ({})) as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    error?: { message?: string };
+  };
+  if (!response.ok) throw new Error(payload.error?.message || `Gemini failed: ${response.status}`);
+  const text = payload.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
+  if (!text.trim()) throw new Error("Gemini empty response");
+  return text.trim();
+}
+
 /** Mode stacks: natural=2, pro=2, pro-max=4 primary OpenRouter free models + shared backups. */
 function chatModelsForMode(modeLabel: string): { id: string; model: string; maxTokens: number; temperature: number }[] {
   const isProMax = modeLabel.includes("ماكس") || modeLabel.includes("pro-max");
@@ -405,11 +443,21 @@ async function runChat(message: string, mode: string, user: Record<string, unkno
   const providers: Array<{ id: string; kind: "chat"; priority: number; execute: () => Promise<string> }> = [];
 
   const stack = chatModelsForMode(mode);
-  stack.forEach((entry, index) => {
+  let priority = 1;
+  // Gemini first when key present (best quality; needs Generative Language API enabled)
+  if (env.FLSKO_GEMINI_API_KEY) {
+    providers.push({
+      id: "gemini-flash",
+      kind: "chat",
+      priority: priority++,
+      execute: () => geminiChat(env, messages, mode.includes("ماكس") ? 1800 : mode.includes("برو") ? 1200 : 800),
+    });
+  }
+  stack.forEach((entry) => {
     providers.push({
       id: entry.id,
       kind: "chat",
-      priority: index + 1,
+      priority: priority++,
       execute: () => openRouterChat(env, entry.model, messages, entry.maxTokens, entry.temperature),
     });
   });
@@ -418,7 +466,7 @@ async function runChat(message: string, mode: string, user: Record<string, unkno
   providers.push({
     id: "or-free-router",
     kind: "chat",
-    priority: stack.length + 1,
+    priority: priority++,
     execute: () => openRouterChat(env, env.FLSKO_OPENROUTER_MODEL || "openrouter/free", messages, 1000, 0.6),
   });
   providers.push({
