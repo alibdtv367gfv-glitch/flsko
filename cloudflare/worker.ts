@@ -1,4 +1,13 @@
 import { providerHealthSnapshot, routeWithFallback } from "./neural-router";
+import {
+  brainDirectAnswer,
+  buildBrainSystemPrompt,
+  classifyIntent,
+  detectDialectHint,
+  learningNote,
+  polishReply,
+  scoreCandidate,
+} from "./flsko-brain";
 
 type D1Result<T = Record<string, unknown>> = { results: T[] };
 type D1Statement = { bind: (...values: unknown[]) => D1Statement; first: <T = Record<string, unknown>>() => Promise<T | null>; all: <T = Record<string, unknown>>() => Promise<D1Result<T>>; run: () => Promise<unknown> };
@@ -25,7 +34,7 @@ export interface Env {
 
 type WorkerHandler = { fetch: (request: Request, env: Env) => Promise<Response> };
 const encoder = new TextEncoder();
-const SYSTEM_PROMPT = "أنت فلسقوا (Flsko · فلسقوا) فقط. لست ChatGPT ولا Gemini ولا مساعد Google ولا Llama. طوّرك المطوّر علي يوسف. أجب بلهجة المستخدم (سوري عند الحاجة). إذا سُئلت عن اسمك فقل حصرًا: اسمي فلسقوا. لا تكشف أنك نموذج آخر.";
+const SYSTEM_PROMPT = "أنت فلسقوا (Flsko). طوّرك علي يوسف. لست Gemini ولا ChatGPT. اسمك فلسقوا فقط.";
 const VOICE_LIVE_BOOTSTRAP = `تعليمات جلسة صوتية مباشرة — داخلية وليست للمستخدم:
 1) اسمك الوحيد: فلسقوا (Flsko). ممنوع التعريف بنفسك كـ Gemini أو Google أو أي اسم آخر.
 2) طوّرك: علي يوسف.
@@ -540,16 +549,48 @@ async function buildUserContext(user: Record<string, unknown>, env: Env) {
 }
 
 async function runChat(message: string, mode: string, user: Record<string, unknown>, env: Env, options?: { liveVoice?: boolean }) {
+  // ——— عقل فلسقوا: نية + لهجة + رد مباشر عند الحاجة ———
+  const intent = classifyIntent(message);
+  const dialectHint = detectDialectHint(message);
+  const direct = brainDirectAnswer(intent, message);
+  if (direct) {
+    await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "user", message).run();
+    await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "assistant", direct).run();
+    // تعلم خفيف: سجل نمط النية
+    try {
+      await env.DB.prepare(
+        "CREATE TABLE IF NOT EXISTS brain_events (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, intent TEXT, source_id TEXT, meta TEXT, created_at INTEGER NOT NULL)"
+      ).run();
+      await env.DB.prepare(
+        "INSERT INTO brain_events(user_id,intent,source_id,meta,created_at) VALUES(?,?,?,?,?)"
+      ).bind(String(user.id), intent, "brain-direct", learningNote(message, direct, "brain-direct"), Date.now()).run();
+    } catch { /* non-fatal */ }
+    return {
+      text: direct,
+      provider: "flsko-brain",
+      sourceId: "brain-direct",
+      mode,
+      intent,
+      dialectHint,
+      stack: [] as string[],
+      compared: 0,
+      attempted: ["brain-direct"],
+    };
+  }
+
   const userContext = await buildUserContext(user, env);
-  const system = options?.liveVoice
-    ? `${SYSTEM_PROMPT}\n${VOICE_LIVE_BOOTSTRAP}\nوضع الإجابة: ${mode} (محادثة صوتية مباشرة).\nسياق المستخدم:\n${userContext}`
-    : `${SYSTEM_PROMPT}\nوضع الإجابة: ${mode}.\nسياق المستخدم:\n${userContext}`;
+  const system = buildBrainSystemPrompt({
+    mode,
+    userContext,
+    liveVoice: options?.liveVoice,
+    dialectHint,
+    extra: options?.liveVoice ? VOICE_LIVE_BOOTSTRAP : undefined,
+  });
   const messages = [{ role: "system", content: system }, { role: "user", content: message }];
   const providers: Array<{ id: string; kind: "chat"; priority: number; execute: () => Promise<string> }> = [];
 
   const stack = chatModelsForMode(mode);
   let priority = 1;
-  // Gemini first when key present (best quality; needs Generative Language API enabled)
   if (env.FLSKO_GEMINI_API_KEY) {
     providers.push({
       id: "gemini-flash",
@@ -566,8 +607,6 @@ async function runChat(message: string, mode: string, user: Record<string, unkno
       execute: () => openRouterChat(env, entry.model, messages, entry.maxTokens, entry.temperature),
     });
   });
-
-  // Shared backups after mode stack
   providers.push({
     id: "or-free-router",
     kind: "chat",
@@ -577,7 +616,7 @@ async function runChat(message: string, mode: string, user: Record<string, unkno
   providers.push({
     id: "huggingface-router",
     kind: "chat",
-    priority: stack.length + 2,
+    priority: priority++,
     execute: async () => {
       const response = await fetch("https://router.huggingface.co/v1/chat/completions", {
         method: "POST",
@@ -600,9 +639,9 @@ async function runChat(message: string, mode: string, user: Record<string, unkno
   providers.push({
     id: "pollinations-text",
     kind: "chat",
-    priority: stack.length + 3,
+    priority: priority++,
     execute: async () => {
-      const q = encodeURIComponent(`${SYSTEM_PROMPT}\nالمستخدم: ${message}\nفلسقوا:`);
+      const q = encodeURIComponent(`${system}\nالمستخدم: ${message}\nفلسقوا:`);
       const response = await fetch(`https://text.pollinations.ai/${q}`, { signal: AbortSignal.timeout(45_000) });
       if (!response.ok) throw new Error(`Pollinations text failed: ${response.status}`);
       const text = (await response.text()).trim();
@@ -612,14 +651,29 @@ async function runChat(message: string, mode: string, user: Record<string, unkno
   });
 
   const routed = await routeWithFallback(providers, Date.now(), routerHooks(env));
-  const text = routed.value;
+  // معالجة آنية بعد الطبقة: هوية + لهجة
+  const polished = polishReply(String(routed.value || ""), message, dialectHint);
+  const quality = scoreCandidate(polished, message);
+
   await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "user", message).run();
-  await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "assistant", text.trim()).run();
+  await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "assistant", polished).run();
+  try {
+    await env.DB.prepare(
+      "CREATE TABLE IF NOT EXISTS brain_events (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, intent TEXT, source_id TEXT, meta TEXT, created_at INTEGER NOT NULL)"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO brain_events(user_id,intent,source_id,meta,created_at) VALUES(?,?,?,?,?)"
+    ).bind(String(user.id), intent, routed.provider, learningNote(message, polished, routed.provider), Date.now()).run();
+  } catch { /* non-fatal */ }
+
   return {
-    text: text.trim(),
-    provider: "orchestrator",
+    text: polished,
+    provider: "flsko-brain",
     sourceId: routed.provider,
     mode,
+    intent,
+    dialectHint,
+    quality,
     stack: stack.map((s) => s.model),
     compared: routed.attempted.length,
     attempted: routed.attempted,
