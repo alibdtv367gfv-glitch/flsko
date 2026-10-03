@@ -100,11 +100,6 @@ export const getLoginUrl = () => {
 export async function startOAuthLogin(): Promise<string | null> {
   WebBrowser.maybeCompleteAuthSession();
   const loginUrl = getLoginUrl();
-  console.log("[OAuth] Starting production login", {
-    loginUrl,
-    platform: ReactNative.Platform.OS,
-    redirectUri: getRedirectUri(),
-  });
 
   if (ReactNative.Platform.OS === "web") {
     if (typeof window !== "undefined") {
