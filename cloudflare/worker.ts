@@ -94,7 +94,7 @@ async function mediaStatus(env?: Env) {
   return {
     policy: "automatic-best-available",
     router: { mode: "safe-fallback", failureCooldownMs: 60000, health: providerHealthSnapshot(), persistedHealth: persistedHealth.results },
-    image: { selected: env?.FLSKO_IMAGE_PROVIDER_URL ? "configured-open-provider" : "pollinations-flux", layers: [layer("configured-open-provider", "مزود صور مخصص", "cloud-open", 1, Boolean(env?.FLSKO_IMAGE_PROVIDER_URL), env?.FLSKO_IMAGE_PROVIDER_URL ? "مهيأ" : "غير مهيأ"), layer("pollinations-flux", "Pollinations Flux", "cloud-open", 2, true, "طبقة أساسية عامة"), layer("ai-horde", "AI Horde", "cloud-open", 3, true, "طوابير مجهولة مجانية"), layer("pollinations-turbo", "Pollinations Turbo", "cloud-open", 4, true, "احتياط"), layer("lexica-search", "Lexica Search", "unofficial", 5, true, "بحث صور تقريبية غير رسمي")] },
+    image: { selected: env?.FLSKO_IMAGE_PROVIDER_URL ? "configured-open-provider" : "pollinations-flux", layers: [layer("configured-open-provider", "مزود صور مخصص", "cloud-open", 1, Boolean(env?.FLSKO_IMAGE_PROVIDER_URL), env?.FLSKO_IMAGE_PROVIDER_URL ? "مهيأ" : "غير مهيأ"), layer("pollinations-flux", "Pollinations Flux", "cloud-open", 2, true, "طبقة أساسية عامة"), layer("ai-horde", "AI Horde", "cloud-open", 3, true, "طوابير مجهولة مجانية"), layer("pollinations-turbo", "Pollinations Turbo", "cloud-open", 4, true, "احتياط"), layer("lexica-search", "Lexica Search", "unofficial", 5, true, "بحث صور تقريبية غير رسمي"), layer("hf-flux-schnell", "HF FLUX.1-schnell Space", "hf-space", 6, true, "احتياط Hugging Face")] },
     video: { selected: env?.FLSKO_WAN_SPACE ? "wan-gradio" : null, layers: [layer("gemini-veo", "Gemini/Veo", "cloud-closed", 1, false, "حصة Gemini الحالية أعادت 429"), layer("wan-gradio", "Wan 2.1 Gradio Space", "cloud-open-queue", 2, Boolean(env?.FLSKO_WAN_SPACE), env?.FLSKO_WAN_SPACE ? "مهيأ بطابور Gradio" : "لم تتم تهيئته"), layer("wan-provider", "Wan 2.x عبر مزود", "cloud-open", 3, Boolean(env?.FLSKO_VIDEO_PROVIDER_URL), env?.FLSKO_VIDEO_PROVIDER_URL ? "مهيأ" : "لا يوجد عنوان مزود"), layer("cogvideox-provider", "CogVideoX عبر مزود", "cloud-open", 4, false, "لا يوجد عنوان مزود مستقل"), layer("rife-mobile", "RIFE محلي", "on-device", 5, false, "يحتاج محرك صور محليًا ومدخلات إطارات")] },
     music: { selected: env?.FLSKO_MUSIC_PROVIDER_URL ? "music-provider" : (env?.FLSKO_VODER_API_URL ? "voder" : "musicgen-space"), layers: [layer("music-provider", "مزود موسيقى مخصص", "cloud-open", 1, Boolean(env?.FLSKO_MUSIC_PROVIDER_URL), env?.FLSKO_MUSIC_PROVIDER_URL ? "مهيأ" : "غير مهيأ"), layer("voder", "VODER", "self-hosted-open", 2, Boolean(env?.FLSKO_VODER_API_URL), env?.FLSKO_VODER_API_URL ? "مهيأ" : "يحتاج FLSKO_VODER_API_URL"), layer("bark-music-space", "Bark Space", "unofficial", 3, true, "غير رسمي/طابور"), layer("musicgen-space", "MusicGen HF Space", "cloud-open-queue", 4, true, "قد يكون باردًا"), layer("unavailable-msg", "رسالة واضحة", "fallback", 5, true, "لا ملفات وهمية")] },
     voice: { selected: "android-tts", layers: [layer("android-tts", "Android TTS", "on-device", 1, true, "الأساسي على الجهاز"), layer("qwen3-tts", "Qwen3-TTS Space", "cloud-open-queue", 2, true, "اختُبر وأعاد ملف صوت"), layer("google-translate-tts", "Google Translate TTS", "unofficial", 3, true, "غير رسمي"), layer("responsivevoice-tts", "ResponsiveVoice", "unofficial", 4, true, "غير رسمي"), layer("voder", "VODER", "self-hosted-open", 5, Boolean(env?.FLSKO_VODER_API_URL), env?.FLSKO_VODER_API_URL ? "مهيأ" : "يحتاج FLSKO_VODER_API_URL")] },
@@ -162,6 +162,43 @@ async function generateOpenImage(prompt: string, env: Env) {
       const url = img?.src || img?.url || img?.imageSrc;
       if (!url) throw new Error("Lexica returned no image");
       return { url, provider: "lexica-search", status: "completed" as const, message: "صورة تقريبية من Lexica (بحث عام غير رسمي)." };
+    } },
+    // Hugging Face Space — FLUX.1-schnell (last resort Gradio)
+    { id: "hf-flux-schnell", kind: "image", priority: 6, execute: async () => {
+      const base = "https://black-forest-labs-flux-1-schnell.hf.space";
+      const headers: Record<string, string> = { "content-type": "application/json", accept: "application/json" };
+      if (env.HF_TOKEN) headers.authorization = `Bearer ${env.HF_TOKEN}`;
+      const call = await fetch(`${base}/gradio_api/call/infer`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ data: [prompt.slice(0, 500), 0, true, 768, 768, 4] }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!call.ok) throw new Error(`HF FLUX space queue failed: ${call.status}`);
+      const queued = await call.json().catch(() => ({})) as { event_id?: string };
+      if (!queued.event_id) throw new Error("HF FLUX no event_id");
+      for (let i = 0; i < 16; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const stream = await fetch(`${base}/gradio_api/call/infer/${encodeURIComponent(queued.event_id)}`, {
+          headers: { accept: "text/event-stream", ...(env.HF_TOKEN ? { authorization: `Bearer ${env.HF_TOKEN}` } : {}) },
+          signal: AbortSignal.timeout(20_000),
+        });
+        const body = await stream.text();
+        if (body.includes("event: error")) throw new Error("HF FLUX space error");
+        if (!body.includes("event: complete")) continue;
+        const line = body.split("event: complete").pop()?.match(/data:\s*(.+)/)?.[1]?.trim();
+        if (!line || line === "null") continue;
+        try {
+          const data = JSON.parse(line) as unknown;
+          const flat = JSON.stringify(data);
+          const m = flat.match(/https?:\/\/[^"\s]+\.(png|jpg|jpeg|webp)/i) || flat.match(/"url"\s*:\s*"(https?:[^"]+)"/i);
+          if (m) {
+            const url = (m[1] && m[1].startsWith("http") ? m[1] : m[0]).replace(/\//g, "/");
+            return { url, provider: "hf-flux-schnell", status: "completed" as const, message: "صورة عبر Hugging Face FLUX.1-schnell Space." };
+          }
+        } catch { /* poll */ }
+      }
+      throw new Error("HF FLUX timed out");
     } },
   ], Date.now(), routerHooks(env));
   return { ...result.value, provider: result.provider, attempted: result.attempted };
@@ -627,8 +664,32 @@ async function transcribeAudioDataUri(dataUri: string, language: string, env: En
       lastErr = e instanceof Error ? e.message : String(e);
     }
   }
+
+  // Hugging Face Whisper (last resort) via Inference router
+  if (env.HF_TOKEN) {
+    try {
+      const bin = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      const response = await fetch("https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${env.HF_TOKEN}`,
+          "content-type": `audio/${format === "mp3" ? "mpeg" : format}`,
+        },
+        body: bin,
+        signal: AbortSignal.timeout(90_000),
+      });
+      const payload = await response.json().catch(() => ({})) as { text?: string; error?: string };
+      if (response.ok && typeof payload.text === "string" && payload.text.trim()) {
+        return { text: payload.text.trim(), provider: "hf-whisper-turbo" };
+      }
+      lastErr = payload.error || `HF Whisper ${response.status}`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : String(e);
+    }
+  }
   throw new Error(lastErr);
 }
+
 
 /** Full voice turn: audio → text → chat (mode stack) → TTS URL. */
 
