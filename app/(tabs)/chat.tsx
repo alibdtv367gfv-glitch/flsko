@@ -18,6 +18,7 @@ import * as FileSystem from "expo-file-system/legacy";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { AgentProcessing } from "@/components/agent-processing";
+import { FlskoRobot } from "@/components/flsko-robot";
 import { startOAuthLogin } from "@/constants/oauth";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
@@ -315,6 +316,16 @@ export default function ChatScreen() {
             <Text className="text-xs font-black text-background">+ جديد</Text>
           </Pressable>
         </View>
+
+        {(liveVoiceMode || busy) && (
+          <View className="items-center border-b border-border bg-surface/80 py-3">
+            <FlskoRobot
+              mood={liveVoiceMode ? (recorderState.isRecording ? "listening" : voiceTurnMutation.isPending || mutation.isPending ? "thinking" : "talking") : "thinking"}
+              size={88}
+              label={liveVoiceMode ? (recorderState.isRecording ? "يستمع إليك…" : "يتحدث معك…") : "يفكّر…"}
+            />
+          </View>
+        )}
 
         {/* Messages */}
         <ScrollView
