@@ -131,6 +131,23 @@ const config: ExpoConfig = {
     typedRoutes: true,
     reactCompiler: true,
   },
+  updates: {
+    url: "https://flsko-api.flsko.workers.dev/api/app/manifest",
+    enabled: true,
+    checkAutomatically: "ON_LOAD",
+    fallbackToCacheTimeout: 5000,
+  },
+  runtimeVersion: {
+    policy: "appVersion",
+  },
+  extra: {
+    apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || "https://flsko-api.flsko.workers.dev",
+    appChannel: process.env.EXPO_PUBLIC_APP_CHANNEL || "production",
+    eas: {
+      projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID || undefined,
+    },
+  },
 };
+
 
 export default config;

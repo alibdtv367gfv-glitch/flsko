@@ -22,6 +22,7 @@ import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-run
 import { useAuth } from "@/hooks/use-auth";
 import { startOAuthLogin } from "@/constants/oauth";
 import { ScreenContainer } from "@/components/screen-container";
+import { runStartupUpdateCheck } from "@/lib/app-update";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -62,6 +63,11 @@ export default function RootLayout() {
   // Initialize Manus runtime for cookie injection from parent container
   useEffect(() => {
     initManusRuntime();
+  }, []);
+
+  // OTA + remote version policy (flexible upgrades without full reinstall when possible)
+  useEffect(() => {
+    void runStartupUpdateCheck();
   }, []);
 
   const handleSafeAreaUpdate = useCallback((metrics: Metrics) => {

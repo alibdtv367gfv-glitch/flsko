@@ -1077,6 +1077,36 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(origin) });
     const url = new URL(request.url);
     if (url.pathname === "/" || url.pathname === "/api/health") return json({ ok: true, service: "flsko-api", database: "d1", timestamp: Date.now() }, 200, origin);
+    // App version / OTA policy — clients poll this for flexible upgrades
+    if (url.pathname === "/api/app/version" && request.method === "GET") {
+      return json({
+        minVersion: "1.0.0",
+        latestVersion: "1.0.1",
+        otaEnabled: true,
+        forceUpdate: false,
+        channel: "production",
+        messageAr: "يتوفر تحسينات على فلسقوا. حدّث عند توفر نسخة المتجر أو انتظر التحديث التلقائي داخل التطبيق.",
+        storeUrlAndroid: "",
+        storeUrlIos: "",
+        features: {
+          voiceLive: true,
+          tutorChannel: true,
+          mediaImage: true,
+          mediaVideo: true,
+          mediaMusic: true,
+        },
+        updatedAt: Date.now(),
+      }, 200, origin);
+    }
+    // Placeholder Expo Updates manifest endpoint (EAS hosts real manifests; this documents channel)
+    if (url.pathname === "/api/app/manifest" && request.method === "GET") {
+      return json({
+        note: "Production OTA manifests are published via eas update. This endpoint confirms the update channel is reachable.",
+        channel: "production",
+        runtimePolicy: "appVersion",
+      }, 200, origin);
+    }
+
     // Tutor channel (Grok / Manus): POST /api/brain/tutor
     if (url.pathname === "/api/brain/tutor" && request.method === "POST") {
       const tutor = authorizeTutor(request, env);

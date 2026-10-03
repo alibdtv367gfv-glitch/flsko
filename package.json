@@ -1,6 +1,6 @@
 {
   "name": "app-template",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
@@ -16,7 +16,9 @@
     "db:push": "drizzle-kit generate && drizzle-kit migrate",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "qr": "node scripts/generate_qr.mjs"
+    "qr": "node scripts/generate_qr.mjs",
+    "deploy:worker": "cd cloudflare && npx wrangler deploy --config wrangler.toml",
+    "release:check": "pnpm check && pnpm test"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -74,7 +76,8 @@
     "superjson": "^1.13.3",
     "tailwind-merge": "^2.6.0",
     "voder-offline": "file:modules/voder-offline",
-    "zod": "^4.2.1"
+    "zod": "^4.2.1",
+    "expo-updates": "~29.0.12"
   },
   "devDependencies": {
     "@expo/ngrok": "^4.1.3",
