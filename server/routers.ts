@@ -74,11 +74,43 @@ export const appRouter = router({
       return result;
     }),
   }),
+  chat: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      // Production path is Cloudflare Worker; local server returns empty until DB migration.
+      return [] as Array<{ id: number; title: string; mode: string; pinnedTask: number; updatedAt: number }>;
+    }),
+    create: protectedProcedure
+      .input(z.object({ title: z.string().max(80).optional(), mode: z.enum(["natural", "pro", "pro-max"]).default("natural") }))
+      .mutation(async ({ input }) => ({
+        id: Date.now() % 1000000,
+        title: input.title || "محادثة جديدة",
+        mode: input.mode,
+        pinnedTask: 0,
+        updatedAt: Date.now(),
+      })),
+    get: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .query(async ({ input }) => ({
+        conversation: { id: input.id, title: "محادثة", mode: "natural", pinnedTask: 0 },
+        messages: [] as Array<{ id: number; role: string; content: string }>,
+      })),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ input }) => ({ deleted: true, id: input.id })),
+    pinTask: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ input }) => ({
+        conversationId: input.id,
+        summary: "ملخص مهمة (محلي)",
+        pinnedTask: true,
+        message: "يُكمل الحفظ الكامل على خادم الإنتاج.",
+      })),
+  }),
   agent: router({
     status: publicProcedure.query(() => getFlskoProviderStatus()),
 
     chat: protectedProcedure
-      .input(z.object({ message: z.string().trim().min(1).max(6000), mode: z.enum(["natural", "pro", "pro-max"]).default("natural"), excludeSource: z.string().max(64).optional(), attachmentIds: z.array(z.number().int().positive()).max(4).optional() }))
+      .input(z.object({ message: z.string().trim().min(1).max(6000), mode: z.enum(["natural", "pro", "pro-max"]).default("natural"), excludeSource: z.string().max(64).optional(), attachmentIds: z.array(z.number().int().positive()).max(4).optional(), conversationId: z.number().int().positive().optional() }))
       .mutation(async ({ ctx, input }) => {
         assertRateLimit(ctx.user.id, "chat", 30);
         await db.cleanupStaleTransientData(ctx.user.id);
@@ -90,7 +122,7 @@ export const appRouter = router({
         const result = await answerAsFlsko(input.message, memories.filter((item) => item.consent).map((item) => item.content), recentConversation.reverse().map((item) => ({ role: item.role, content: item.content })), input.excludeSource ? [input.excludeSource] : [], profile, attachments, input.mode);
         await db.createAgentMessage({ userId: ctx.user.id, role: "user", content: input.message });
         await db.createAgentMessage({ userId: ctx.user.id, role: "assistant", content: result.text });
-        return result;
+        return { ...result, conversationId: input.conversationId };
       }),
 
     generate: protectedProcedure

@@ -62,6 +62,120 @@ const IMAGE_ESTIMATED_SEC = 45;
 
 let routerTablesReady: Promise<void> | null = null;
 
+
+async function ensureConversationTables(env: Env) {
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS conversations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    title TEXT NOT NULL DEFAULT 'محادثة جديدة',
+    mode TEXT NOT NULL DEFAULT 'natural',
+    pinned_task INTEGER NOT NULL DEFAULT 0,
+    summary TEXT,
+    updated_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  )`).run();
+  try {
+    await env.DB.prepare("ALTER TABLE messages ADD COLUMN conversation_id INTEGER").run();
+  } catch { /* column may exist */ }
+  await env.DB.prepare("CREATE INDEX IF NOT EXISTS messages_conv_idx ON messages(conversation_id)").run();
+  await env.DB.prepare("CREATE INDEX IF NOT EXISTS conversations_user_idx ON conversations(user_id, updated_at)").run();
+}
+
+async function purgeExpiredConversations(env: Env, userId: unknown) {
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const old = await env.DB.prepare(
+    "SELECT id FROM conversations WHERE user_id=? AND pinned_task=0 AND updated_at < ?"
+  ).bind(userId, cutoff).all<{ id: number }>();
+  for (const row of old.results || []) {
+    await env.DB.prepare("DELETE FROM messages WHERE conversation_id=?").bind(row.id).run();
+    await env.DB.prepare("DELETE FROM conversations WHERE id=? AND user_id=?").bind(row.id, userId).run();
+  }
+}
+
+async function ensureDefaultConversation(env: Env, userId: unknown, mode = "natural") {
+  await ensureConversationTables(env);
+  await purgeExpiredConversations(env, userId);
+  const existing = await env.DB.prepare(
+    "SELECT id, title, mode, pinned_task as pinnedTask, summary, updated_at as updatedAt FROM conversations WHERE user_id=? ORDER BY updated_at DESC LIMIT 1"
+  ).bind(userId).first();
+  if (existing) return existing;
+  const now = Date.now();
+  const res = await env.DB.prepare(
+    "INSERT INTO conversations(user_id,title,mode,pinned_task,updated_at,created_at) VALUES(?,?,?,0,?,?)"
+  ).bind(userId, "محادثة جديدة", mode, now, now).run();
+  return {
+    id: Number(res.meta.last_row_id),
+    title: "محادثة جديدة",
+    mode,
+    pinnedTask: 0,
+    summary: null,
+    updatedAt: now,
+  };
+}
+
+async function listConversations(env: Env, userId: unknown) {
+  await ensureConversationTables(env);
+  await purgeExpiredConversations(env, userId);
+  const rows = await env.DB.prepare(
+    "SELECT id, title, mode, pinned_task as pinnedTask, summary, updated_at as updatedAt, created_at as createdAt FROM conversations WHERE user_id=? ORDER BY pinned_task DESC, updated_at DESC LIMIT 80"
+  ).bind(userId).all();
+  return rows.results || [];
+}
+
+async function getConversationMessages(env: Env, userId: unknown, conversationId: number) {
+  const conv = await env.DB.prepare(
+    "SELECT id, title, mode, pinned_task as pinnedTask, summary FROM conversations WHERE id=? AND user_id=?"
+  ).bind(conversationId, userId).first();
+  if (!conv) throw new Error("المحادثة غير موجودة");
+  const msgs = await env.DB.prepare(
+    "SELECT id, role, content, created_at as createdAt FROM messages WHERE user_id=? AND conversation_id=? ORDER BY id ASC LIMIT 200"
+  ).bind(userId, conversationId).all();
+  return { conversation: conv, messages: msgs.results || [] };
+}
+
+async function createConversation(env: Env, userId: unknown, title?: string, mode = "natural") {
+  await ensureConversationTables(env);
+  const now = Date.now();
+  const res = await env.DB.prepare(
+    "INSERT INTO conversations(user_id,title,mode,pinned_task,updated_at,created_at) VALUES(?,?,?,0,?,?)"
+  ).bind(userId, (title || "محادثة جديدة").slice(0, 80), mode, now, now).run();
+  return { id: Number(res.meta.last_row_id), title: title || "محادثة جديدة", mode, pinnedTask: 0, updatedAt: now };
+}
+
+async function pinConversationAsTask(env: Env, userId: unknown, conversationId: number) {
+  const data = await getConversationMessages(env, userId, conversationId);
+  const transcript = (data.messages as Array<{ role: string; content: string }>)
+    .map((m) => `${m.role === "user" ? "المستخدم" : "فلسقوا"}: ${m.content}`)
+    .join("\n")
+    .slice(0, 6000);
+  let summary = "ملخص مهمة محفوظ من محادثة فلسقوا.";
+  try {
+    const system = "أنت فلسقوا. لخّص المحادثة التالية بنقاط عربية قصيرة تحفظ المعلومات المهمة للمستخدم فقط (أسماء، قرارات، تفضيلات، مهام). بدون حشو.";
+    if (env.FLSKO_GEMINI_API_KEY) {
+      summary = await geminiChat(env, [
+        { role: "system", content: system },
+        { role: "user", content: transcript || "محادثة قصيرة" },
+      ], 500);
+    } else if (env.OPENROUTER_API_KEY) {
+      summary = await openRouterChat(env, env.FLSKO_OPENROUTER_MODEL || "openrouter/free", [
+        { role: "system", content: system },
+        { role: "user", content: transcript || "محادثة قصيرة" },
+      ], 500, 0.3);
+    }
+  } catch {
+    summary = transcript.slice(0, 400) || summary;
+  }
+  summary = summary.slice(0, 1500);
+  const now = Date.now();
+  await env.DB.prepare(
+    "UPDATE conversations SET pinned_task=1, summary=?, updated_at=?, title=COALESCE(NULLIF(title,''), ?) WHERE id=? AND user_id=?"
+  ).bind(summary, now, "مهمة محفوظة", conversationId, userId).run();
+  await env.DB.prepare(
+    "INSERT INTO memories(user_id,category,content,consent) VALUES(?,?,?,1)"
+  ).bind(userId, "مهمة-محادثة", summary).run();
+  return { conversationId, summary, pinnedTask: true, message: "حُفظ ملخص المهمة في الذاكرة السحابية. المحادثات غير المهمة تُحذف بعد 30 يومًا." };
+}
+
 async function ensureRouterTables(env: Env) {
   if (!routerTablesReady) {
     routerTablesReady = env.DB.prepare("CREATE TABLE IF NOT EXISTS provider_health (provider_id TEXT PRIMARY KEY, kind TEXT NOT NULL, failures INTEGER NOT NULL DEFAULT 0, last_failure_at INTEGER, disabled_until INTEGER, last_error TEXT, updated_at INTEGER NOT NULL)").run()
@@ -830,15 +944,30 @@ async function handleTutorAction(
   return { error: true, message: "action غير معروف", quota };
 }
 
-async function runChat(message: string, mode: string, user: Record<string, unknown>, env: Env, options?: { liveVoice?: boolean }) {
+async function saveChatPair(env: Env, userId: unknown, conversationId: number | undefined, userMsg: string, assistantMsg: string) {
+  let convId = conversationId;
+  if (!convId) {
+    const conv = await ensureDefaultConversation(env, userId);
+    convId = Number((conv as { id: number }).id);
+  }
+  await env.DB.prepare("INSERT INTO messages(user_id,conversation_id,role,content) VALUES(?,?,?,?)").bind(userId, convId, "user", userMsg).run();
+  await env.DB.prepare("INSERT INTO messages(user_id,conversation_id,role,content) VALUES(?,?,?,?)").bind(userId, convId, "assistant", assistantMsg).run();
+  await env.DB.prepare("UPDATE conversations SET updated_at=? WHERE id=? AND user_id=?").bind(Date.now(), convId, userId).run();
+  // auto-title from first user message
+  const titleRow = await env.DB.prepare("SELECT title FROM conversations WHERE id=?").bind(convId).first<{ title: string }>();
+  if (titleRow && (titleRow.title === "محادثة جديدة" || !titleRow.title)) {
+    await env.DB.prepare("UPDATE conversations SET title=? WHERE id=?").bind(userMsg.slice(0, 42), convId).run();
+  }
+  return convId;
+}
+
+async function runChat(message: string, mode: string, user: Record<string, unknown>, env: Env, options?: { liveVoice?: boolean; conversationId?: number }) {
   // ——— عقل فلسقوا: نية + لهجة + رد مباشر عند الحاجة ———
   const intent = classifyIntent(message);
   const dialectHint = detectDialectHint(message);
   const direct = brainDirectAnswer(intent, message);
   if (direct) {
-    await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "user", message).run();
-    await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "assistant", direct).run();
-    // تعلم خفيف: سجل نمط النية
+    const convId = await saveChatPair(env, user.id, options?.conversationId, message, direct);
     try {
       await env.DB.prepare(
         "CREATE TABLE IF NOT EXISTS brain_events (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, intent TEXT, source_id TEXT, meta TEXT, created_at INTEGER NOT NULL)"
@@ -854,6 +983,7 @@ async function runChat(message: string, mode: string, user: Record<string, unkno
       mode,
       intent,
       dialectHint,
+      conversationId: convId,
       stack: [] as string[],
       compared: 0,
       attempted: ["brain-direct"],
@@ -942,8 +1072,7 @@ async function runChat(message: string, mode: string, user: Record<string, unkno
   const polished = polishReply(String(routed.value || ""), message, dialectHint);
   const quality = scoreCandidate(polished, message);
 
-  await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "user", message).run();
-  await env.DB.prepare("INSERT INTO messages(user_id,role,content) VALUES(?,?,?)").bind(user.id, "assistant", polished).run();
+  const convId = await saveChatPair(env, user.id, options?.conversationId, message, polished);
   try {
     await env.DB.prepare(
       "CREATE TABLE IF NOT EXISTS brain_events (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, intent TEXT, source_id TEXT, meta TEXT, created_at INTEGER NOT NULL)"
@@ -961,6 +1090,7 @@ async function runChat(message: string, mode: string, user: Record<string, unkno
     intent,
     dialectHint,
     quality,
+    conversationId: convId,
     stack: stack.map((s) => s.model),
     compared: routed.attempted.length,
     attempted: routed.attempted,
@@ -1228,7 +1358,43 @@ export default {
           if (result.error) return trpcError(String(result.message || "خطأ"), 429, origin);
           return trpcResult(result, origin);
         }
-        if (path === "agent.chat") { const value = input || {}; const message = typeof value.message === "string" ? value.message.trim() : ""; if (!message || message.length > 6000) return trpcError("الرسالة مطلوبة وبحد أقصى 6000 حرف", 400, origin); const mode = value.mode === "pro-max" ? "برو ماكس" : value.mode === "pro" ? "برو" : "طبيعي وسريع"; return trpcResult(await runChat(message, mode, user, env), origin); }
+        if (path === "agent.chat") {
+          const value = input || {};
+          const message = typeof value.message === "string" ? value.message.trim() : "";
+          if (!message || message.length > 6000) return trpcError("الرسالة مطلوبة وبحد أقصى 6000 حرف", 400, origin);
+          const mode = value.mode === "pro-max" ? "برو ماكس" : value.mode === "pro" ? "برو" : "طبيعي وسريع";
+          const conversationId = typeof value.conversationId === "number" ? value.conversationId : undefined;
+          return trpcResult(await runChat(message, mode, user, env, { conversationId }), origin);
+        }
+        if (path === "chat.list") {
+          return trpcResult(await listConversations(env, user.id), origin);
+        }
+        if (path === "chat.create") {
+          const value = input || {};
+          const title = typeof value.title === "string" ? value.title : undefined;
+          const mode = typeof value.mode === "string" ? value.mode : "natural";
+          return trpcResult(await createConversation(env, user.id, title, mode), origin);
+        }
+        if (path === "chat.get") {
+          const value = input || {};
+          const id = Number(value.id || value.conversationId);
+          if (!id) return trpcError("معرّف المحادثة مطلوب", 400, origin);
+          return trpcResult(await getConversationMessages(env, user.id, id), origin);
+        }
+        if (path === "chat.delete") {
+          const value = input || {};
+          const id = Number(value.id || value.conversationId);
+          if (!id) return trpcError("معرّف المحادثة مطلوب", 400, origin);
+          await env.DB.prepare("DELETE FROM messages WHERE conversation_id=? AND user_id=?").bind(id, user.id).run();
+          await env.DB.prepare("DELETE FROM conversations WHERE id=? AND user_id=?").bind(id, user.id).run();
+          return trpcResult({ deleted: true, id }, origin);
+        }
+        if (path === "chat.pinTask") {
+          const value = input || {};
+          const id = Number(value.id || value.conversationId);
+          if (!id) return trpcError("معرّف المحادثة مطلوب", 400, origin);
+          return trpcResult(await pinConversationAsTask(env, user.id, id), origin);
+        }
         if (path === "agent.generate") { const value = input || {}; if (typeof value.prompt !== "string" || value.prompt.trim().length < 3) return trpcError("نوع الوسائط أو الوصف غير صالح", 400, origin); if (value.kind === "video") return trpcResult(await submitWanVideo(value.prompt.trim(), env), origin); if (value.kind !== "image") return trpcError("نوع الوسائط غير صالح", 400, origin); return trpcResult(await generateOpenImage(value.prompt.trim(), env), origin); }
         if (path === "agent.mediaJob") { const value = input || {}; if (typeof value.jobId !== "string" || value.jobId.length < 8) return trpcError("رقم المهمة غير صالح", 400, origin); return trpcResult(await pollWanVideo(value.jobId, env), origin); }
         if (path === "agent.music") { const value = input || {}; if (typeof value.prompt !== "string" || value.prompt.trim().length < 3) return trpcError("وصف الموسيقى غير صالح", 400, origin); return trpcResult(await generateOpenMusic(value.prompt.trim(), env), origin); }

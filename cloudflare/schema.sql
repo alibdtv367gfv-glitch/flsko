@@ -29,9 +29,21 @@ CREATE TABLE IF NOT EXISTS memories (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS conversations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  title TEXT NOT NULL DEFAULT 'محادثة جديدة',
+  mode TEXT NOT NULL DEFAULT 'natural',
+  pinned_task INTEGER NOT NULL DEFAULT 0,
+  summary TEXT,
+  updated_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
+  conversation_id INTEGER,
   role TEXT NOT NULL,
   content TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -68,4 +80,6 @@ CREATE TABLE IF NOT EXISTS provider_events (
 CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS memories_user_idx ON memories(user_id);
 CREATE INDEX IF NOT EXISTS messages_user_idx ON messages(user_id);
+CREATE INDEX IF NOT EXISTS messages_conv_idx ON messages(conversation_id);
+CREATE INDEX IF NOT EXISTS conversations_user_idx ON conversations(user_id, updated_at);
 CREATE INDEX IF NOT EXISTS provider_events_provider_idx ON provider_events(provider_id, created_at);
