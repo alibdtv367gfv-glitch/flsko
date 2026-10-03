@@ -473,6 +473,108 @@ async function runChat(message: string, mode: string, user: Record<string, unkno
   };
 }
 
+
+function parseDataUri(dataUri: string): { mime: string; base64: string; format: string } {
+  const m = dataUri.match(/^data:(audio\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/i);
+  if (!m) throw new Error("صيغة التسجيل غير مدعومة");
+  const mime = m[1].toLowerCase();
+  const base64 = m[2];
+  let format = "m4a";
+  if (mime.includes("wav")) format = "wav";
+  else if (mime.includes("mpeg") || mime.includes("mp3")) format = "mp3";
+  else if (mime.includes("ogg")) format = "ogg";
+  else if (mime.includes("webm")) format = "webm";
+  else if (mime.includes("mp4") || mime.includes("m4a") || mime.includes("aac")) format = "m4a";
+  if (base64.length > 8_000_000) throw new Error("التسجيل طويل جدًا؛ سجّل مقطعًا أقصر");
+  return { mime, base64, format };
+}
+
+/** STT layers: free OpenRouter audio-input models (transcribe instruction) then fail soft. */
+async function transcribeAudioDataUri(dataUri: string, language: string, env: Env): Promise<{ text: string; provider: string }> {
+  const { base64, format } = parseDataUri(dataUri);
+  const langHint = language.startsWith("ar") ? "Arabic (Syrian dialect if present)" : language;
+  const models = [
+    "thinkingmachines/inkling:free",
+    "thinkingmachines/inkling-small:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  ];
+  if (!env.OPENROUTER_API_KEY) throw new Error("لا يتوفر مفتاح تحويل الصوت");
+
+  let lastErr = "تعذر فهم التسجيل";
+  for (const model of models) {
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+          "HTTP-Referer": "https://flsko-api.flsko.workers.dev",
+          "X-Title": "Flsko",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{
+            role: "user",
+            content: [
+              { type: "text", text: `Transcribe the speech to plain text only. Language: ${langHint}. Output the transcript with no commentary.` },
+              { type: "input_audio", input_audio: { data: base64, format } },
+            ],
+          }],
+          max_tokens: 800,
+          temperature: 0,
+        }),
+        signal: AbortSignal.timeout(90_000),
+      });
+      const payload = await response.json().catch(() => ({})) as {
+        choices?: Array<{ message?: { content?: unknown } }>;
+        error?: { message?: string };
+      };
+      if (!response.ok) {
+        lastErr = payload.error?.message || `STT ${model} ${response.status}`;
+        continue;
+      }
+      const text = payload.choices?.[0]?.message?.content;
+      if (typeof text === "string" && text.trim()) {
+        return { text: text.trim(), provider: model };
+      }
+      lastErr = `STT ${model} empty`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : String(e);
+    }
+  }
+  throw new Error(lastErr);
+}
+
+/** Full voice turn: audio → text → chat (mode stack) → TTS URL. */
+async function voiceChatTurn(
+  dataUri: string,
+  language: string,
+  mode: string,
+  user: Record<string, unknown>,
+  env: Env,
+) {
+  const stt = await transcribeAudioDataUri(dataUri, language, env);
+  const chat = await runChat(stt.text, mode, user, env);
+  let speech: { url?: string; provider?: string; status?: string; message?: string } | null = null;
+  try {
+    speech = await generateSpeech(chat.text, language.startsWith("ar") ? "ar" : "en");
+  } catch {
+    speech = { status: "unavailable", message: "تعذر توليد الصوت السحابي؛ استخدم قراءة الجهاز." };
+  }
+  return {
+    transcript: stt.text,
+    sttProvider: stt.provider,
+    text: chat.text,
+    sourceId: chat.sourceId,
+    mode: chat.mode,
+    stack: chat.stack,
+    speechUrl: speech?.url,
+    speechProvider: speech?.provider,
+    speechStatus: speech?.status || "completed",
+    speechMessage: speech?.message,
+  };
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const origin = request.headers.get("Origin");
@@ -500,6 +602,19 @@ export default {
         if (path === "agent.mediaJob") { const value = input || {}; if (typeof value.jobId !== "string" || value.jobId.length < 8) return trpcError("رقم المهمة غير صالح", 400, origin); return trpcResult(await pollWanVideo(value.jobId, env), origin); }
         if (path === "agent.music") { const value = input || {}; if (typeof value.prompt !== "string" || value.prompt.trim().length < 3) return trpcError("وصف الموسيقى غير صالح", 400, origin); return trpcResult(await generateOpenMusic(value.prompt.trim(), env), origin); }
         if (path === "agent.speak") { const value = input || {}; if (typeof value.text !== "string" || value.text.trim().length < 1) return trpcError("النص مطلوب", 400, origin); return trpcResult(await generateSpeech(value.text.trim(), typeof value.lang === "string" ? value.lang : "ar"), origin); }
+        if (path === "voice.transcribe") {
+          const value = input || {};
+          if (typeof value.dataUri !== "string" || !value.dataUri.startsWith("data:audio/")) return trpcError("التسجيل الصوتي مطلوب", 400, origin);
+          const language = typeof value.language === "string" ? value.language : "ar";
+          return trpcResult(await transcribeAudioDataUri(value.dataUri, language, env), origin);
+        }
+        if (path === "agent.voiceTurn") {
+          const value = input || {};
+          if (typeof value.dataUri !== "string" || !value.dataUri.startsWith("data:audio/")) return trpcError("التسجيل الصوتي مطلوب", 400, origin);
+          const language = typeof value.language === "string" ? value.language : "ar";
+          const modeLabel = value.mode === "pro-max" ? "برو ماكس" : value.mode === "pro" ? "برو" : "طبيعي وسريع";
+          return trpcResult(await voiceChatTurn(value.dataUri, language, modeLabel, user, env), origin);
+        }
         return trpcError("المسار غير مدعوم بعد على Cloudflare", 404, origin);
       } catch (error) { return trpcError(error instanceof Error ? error.message : "تعذر تنفيذ الطلب", 500, origin); }
     }

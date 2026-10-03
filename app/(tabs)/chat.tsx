@@ -76,10 +76,6 @@ export default function ChatScreen() {
     onError: (error) => Alert.alert("تعذر الرد", error.message || "حاول مرة أخرى."),
   });
   const reportMutation = trpc.safety.report.useMutation();
-  const transcribeMutation = trpc.voice.transcribe.useMutation({
-    onSuccess: (data) => setDraft((current) => current ? `${current} ${data.text}` : data.text),
-    onError: (error) => Alert.alert("تعذر فهم التسجيل", error.message || "حاول تسجيل مقطع أقصر."),
-  });
 
   const readAloud = (text: string) => {
     const selected = voices.find((voice) => voiceMatches(voice, voiceGender)) || voices[0];
@@ -90,6 +86,23 @@ export default function ChatScreen() {
     });
   };
 
+  // Pipeline: صوت → نص → رد حسب وضع الدردشة → قراءة الرد بصوت الجهاز (واحتياط سحابي)
+  const voiceTurnMutation = trpc.agent.voiceTurn.useMutation({
+    onSuccess: (data) => {
+      const userMsg: ChatMessage = { id: `${Date.now()}-user-voice`, role: "user", content: data.transcript };
+      const assistant: ChatMessage = { id: `${Date.now()}-assistant-voice`, role: "assistant", content: data.text, sourceId: data.sourceId };
+      setLastSourceId(data.sourceId);
+      setMessages((current) => [...current, userMsg, assistant]);
+      setDraft("");
+      readAloud(data.text);
+    },
+    onError: (error) => Alert.alert("تعذر المحادثة الصوتية", error.message || "حاول مقطعًا أقصر أو أعد المحاولة."),
+  });
+  const transcribeMutation = trpc.voice.transcribe.useMutation({
+    onSuccess: (data) => setDraft((current) => current ? `${current} ${data.text}` : data.text),
+    onError: (error) => Alert.alert("تعذر فهم التسجيل", error.message || "حاول تسجيل مقطع أقصر."),
+  });
+
   const toggleRecording = async () => {
     if (!isAuthenticated) {
       Alert.alert("تسجيل الدخول مطلوب", "سجّل الدخول لاستخدام المحادثة الصوتية وحفظها بأمان.", [{ text: "لاحقًا", style: "cancel" }, { text: "تسجيل الدخول", onPress: () => void startOAuthLogin() }]);
@@ -99,7 +112,9 @@ export default function ChatScreen() {
       await recorder.stop();
       if (!recorder.uri) return;
       const base64 = await FileSystem.readAsStringAsync(recorder.uri, { encoding: FileSystem.EncodingType.Base64 });
-      transcribeMutation.mutate({ dataUri: `data:audio/m4a;base64,${base64}`, language: "ar" });
+      const dataUri = `data:audio/m4a;base64,${base64}`;
+      // Full voice conversation (STT → chat mode stack → TTS on device)
+      voiceTurnMutation.mutate({ dataUri, language: "ar", mode: chatMode });
       return;
     }
     const permission = await requestRecordingPermissionsAsync();
@@ -126,7 +141,7 @@ export default function ChatScreen() {
       ]);
       return;
     }
-    if (!draft.trim() || mutation.isPending) return;
+    if (!draft.trim() || (mutation.isPending || voiceTurnMutation.isPending)) return;
     const message = draft.trim();
     setDraft("");
     setLastPrompt(message);
@@ -136,7 +151,7 @@ export default function ChatScreen() {
   };
 
   const retryWithAnotherSource = () => {
-    if (!lastPrompt || mutation.isPending) return;
+    if (!lastPrompt || (mutation.isPending || voiceTurnMutation.isPending)) return;
     mutation.mutate({ message: lastPrompt, mode: chatMode, excludeSource: lastSourceId });
   };
 
@@ -184,15 +199,15 @@ export default function ChatScreen() {
               {message.role === "assistant" && <View className="mt-3 flex-row gap-4"><Pressable onPress={() => readAloud(message.content)}><Text className="text-xs font-semibold text-primary">استمع</Text></Pressable>{message.id !== "welcome" && <Pressable onPress={() => reportMessage(message.id)} disabled={reportMutation.isPending}><Text className="text-xs font-semibold text-muted">إبلاغ</Text></Pressable>}</View>}
             </View>
           ))}
-          {mutation.isPending && <AgentProcessing mode="chat" />}
-          {!mutation.isPending && lastPrompt && lastSourceId && <Pressable onPress={retryWithAnotherSource} style={({ pressed }) => [pressed && { opacity: 0.75 }]} className="self-center rounded-full border border-primary px-4 py-2"><Text className="text-xs font-bold text-primary">إجابة أخرى من مصدر مختلف</Text></Pressable>}
+          {(mutation.isPending || voiceTurnMutation.isPending) && <AgentProcessing mode="chat" />}
+          {!(mutation.isPending || voiceTurnMutation.isPending) && lastPrompt && lastSourceId && <Pressable onPress={retryWithAnotherSource} style={({ pressed }) => [pressed && { opacity: 0.75 }]} className="self-center rounded-full border border-primary px-4 py-2"><Text className="text-xs font-bold text-primary">إجابة أخرى من مصدر مختلف</Text></Pressable>}
         </ScrollView>
 
         {files.data?.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-2"><View className="flex-row gap-2">{files.data.slice(0, 8).map((file) => { const active = selectedFileIds.includes(file.id); return <Pressable key={file.id} onPress={() => setSelectedFileIds((current) => active ? current.filter((id) => id !== file.id) : current.length < 4 ? [...current, file.id] : current)} style={{ backgroundColor: active ? colors.primary : colors.surface, borderColor: active ? colors.primary : colors.border }} className="rounded-full border px-3 py-2"><Text className="max-w-[120px] text-xs font-bold" numberOfLines={1} style={{ color: active ? colors.background : colors.foreground }}>{file.name}</Text></Pressable>; })}</View></ScrollView> : null}
         <View className="mb-2 flex-row items-end gap-2 rounded-3xl border border-border bg-surface p-2">
           <Pressable onPress={() => router.push("/(tabs)/library")} style={({ pressed }) => [pressed && { opacity: 0.7 }]} className="h-12 w-12 items-center justify-center rounded-2xl border border-border"><Text className="text-xl text-primary">＋</Text></Pressable>
           <TextInput value={draft} onChangeText={setDraft} multiline textAlign="right" placeholder="اكتب ما يدور ببالك..." placeholderTextColor={colors.muted} className="max-h-28 min-h-[48px] flex-1 px-3 py-3 text-base text-foreground" />
-          <Pressable onPress={() => void toggleRecording()} disabled={transcribeMutation.isPending} style={({ pressed }) => [{ backgroundColor: recorderState.isRecording ? colors.error : colors.background }, pressed && { opacity: 0.75 }]} className="h-12 min-w-[52px] items-center justify-center rounded-2xl border border-border"><Text className="text-xs font-bold" style={{ color: recorderState.isRecording ? colors.background : colors.primary }}>{transcribeMutation.isPending ? "يفهم" : recorderState.isRecording ? "إيقاف" : "تسجيل"}</Text></Pressable>
+          <Pressable onPress={() => void toggleRecording()} disabled={transcribeMutation.isPending || voiceTurnMutation.isPending} style={({ pressed }) => [{ backgroundColor: recorderState.isRecording ? colors.error : colors.background }, pressed && { opacity: 0.75 }]} className="h-12 min-w-[52px] items-center justify-center rounded-2xl border border-border"><Text className="text-xs font-bold" style={{ color: recorderState.isRecording ? colors.background : colors.primary }}>{voiceTurnMutation.isPending ? "يرد…" : transcribeMutation.isPending ? "يفهم" : recorderState.isRecording ? "إيقاف" : "تسجيل"}</Text></Pressable>
           <Pressable onPress={send} style={({ pressed }) => [pressed && { opacity: 0.75 }]} className="h-12 w-12 items-center justify-center rounded-2xl bg-primary"><Text className="text-xl font-black text-background">↑</Text></Pressable>
         </View>
       </KeyboardAvoidingView>

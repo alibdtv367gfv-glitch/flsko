@@ -140,6 +140,37 @@ export const appRouter = router({
           throw error;
         }
       }),
+    /** Voice conversation: STT → chat → returns text (client speaks via device TTS). */
+    voiceTurn: protectedProcedure
+      .input(z.object({
+        dataUri: z.string().regex(/^data:audio\/[a-z0-9.+-]+;base64,/i).max(22000000),
+        language: z.string().trim().max(12).default("ar"),
+        mode: z.enum(["natural", "pro", "pro-max"]).default("natural"),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        assertRateLimit(ctx.user.id, "voice-turn", 8);
+        const match = input.dataUri.match(/^data:(audio\/[^;]+);base64,(.+)$/i);
+        if (!match) throw new Error("صيغة التسجيل غير مدعومة");
+        const stored = await storagePut(`transient-audio/${ctx.user.id}/${Date.now()}.m4a`, Buffer.from(match[2], "base64"), match[1]);
+        const stt = await transcribeAudio({
+          audioUrl: stored.url,
+          language: input.language,
+          prompt: "حوّل كلام المستخدم العربي واللهجة السورية إلى نص عربي واضح دون ترجمة.",
+        });
+        if ("error" in stt) throw new Error(stt.error || "تعذر فهم التسجيل");
+        const transcript = stt.text.trim();
+        if (!transcript) throw new Error("لم يُفهم أي كلام من التسجيل");
+        const chat = await answerAsFlsko(transcript, [], [], [], undefined, undefined, input.mode);
+        return {
+          transcript,
+          sttProvider: "managed-whisper",
+          text: chat.text,
+          sourceId: (chat as { sourceId?: string }).sourceId,
+          mode: input.mode,
+          speechStatus: "device-tts",
+          speechMessage: "يُقرأ الرد عبر صوت الجهاز",
+        };
+      }),
   }),
   voice: router({
     transcribe: protectedProcedure
