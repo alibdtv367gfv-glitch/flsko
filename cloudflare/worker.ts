@@ -2,11 +2,19 @@ import { providerHealthSnapshot, routeWithFallback } from "./neural-router";
 import {
   brainDirectAnswer,
   buildBrainSystemPrompt,
+  buildTutorSessionPrompt,
   classifyIntent,
+  clampScore,
   detectDialectHint,
+  formatLessonLine,
+  injectLessonsIntoPrompt,
   learningNote,
   polishReply,
   scoreCandidate,
+  tutorDayKey,
+  TUTOR_DAILY_LIMIT,
+  type TutorAction,
+  type TutorRole,
 } from "./flsko-brain";
 
 type D1Result<T = Record<string, unknown>> = { results: T[] };
@@ -26,6 +34,7 @@ export interface Env {
   FLSKO_OPENROUTER_MODEL?: string;
   FLSKO_GEMINI_API_KEY?: string;
   FLSKO_GEMINI_MODEL?: string;
+  FLSKO_TUTOR_SECRET?: string;
   GOOGLE_OAUTH_CLIENT_ID: string;
   GOOGLE_OAUTH_CLIENT_SECRET: string;
   GOOGLE_OAUTH_REDIRECT_URI: string;
@@ -548,6 +557,216 @@ async function buildUserContext(user: Record<string, unknown>, env: Env) {
   return lines.join("\n");
 }
 
+
+async function ensureBrainTables(env: Env) {
+  await env.DB.prepare(
+    "CREATE TABLE IF NOT EXISTS brain_events (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, intent TEXT, source_id TEXT, meta TEXT, created_at INTEGER NOT NULL)"
+  ).run();
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS brain_tutor_quota (
+      tutor TEXT NOT NULL, day TEXT NOT NULL, used INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (tutor, day)
+    )`
+  ).run();
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS brain_lessons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tutor TEXT NOT NULL,
+      input TEXT NOT NULL,
+      ideal TEXT NOT NULL,
+      tags TEXT,
+      created_at INTEGER NOT NULL
+    )`
+  ).run();
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS brain_guidance (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tutor TEXT NOT NULL,
+      rule TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL
+    )`
+  ).run();
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS brain_evaluations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tutor TEXT NOT NULL,
+      sample_user TEXT,
+      sample_reply TEXT,
+      score REAL NOT NULL,
+      notes TEXT,
+      created_at INTEGER NOT NULL
+    )`
+  ).run();
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS brain_tutor_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tutor TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )`
+  ).run();
+}
+
+function authorizeTutor(request: Request, env: Env): TutorRole | null {
+  const secret = env.FLSKO_TUTOR_SECRET;
+  if (!secret) return null;
+  const hdr = request.headers.get("x-flsko-tutor-secret") || request.headers.get("X-Flsko-Tutor-Secret") || "";
+  if (hdr !== secret) return null;
+  const role = (request.headers.get("x-flsko-tutor") || request.headers.get("X-Flsko-Tutor") || "developer").toLowerCase();
+  if (role === "grok" || role === "manus" || role === "ali" || role === "developer") return role;
+  return "developer";
+}
+
+async function consumeTutorQuota(env: Env, tutor: TutorRole): Promise<{ ok: boolean; used: number; limit: number; day: string }> {
+  const day = tutorDayKey();
+  const row = await env.DB.prepare("SELECT used FROM brain_tutor_quota WHERE tutor=? AND day=?").bind(tutor, day).first<{ used: number }>();
+  const used = row?.used ?? 0;
+  if (used >= TUTOR_DAILY_LIMIT) return { ok: false, used, limit: TUTOR_DAILY_LIMIT, day };
+  await env.DB.prepare(
+    "INSERT INTO brain_tutor_quota(tutor, day, used) VALUES(?,?,1) ON CONFLICT(tutor, day) DO UPDATE SET used = used + 1"
+  ).bind(tutor, day).run();
+  return { ok: true, used: used + 1, limit: TUTOR_DAILY_LIMIT, day };
+}
+
+async function loadActiveGuidance(env: Env): Promise<string[]> {
+  const rows = await env.DB.prepare(
+    "SELECT rule FROM brain_guidance WHERE active=1 ORDER BY id DESC LIMIT 12"
+  ).all<{ rule: string }>();
+  return (rows.results || []).map((r) => r.rule);
+}
+
+async function loadRecentLessons(env: Env): Promise<string[]> {
+  const rows = await env.DB.prepare(
+    "SELECT input, ideal FROM brain_lessons ORDER BY id DESC LIMIT 10"
+  ).all<{ input: string; ideal: string }>();
+  return (rows.results || []).map((r) => formatLessonLine(r.input, r.ideal));
+}
+
+async function tutorChatTurn(env: Env, tutor: TutorRole, message: string) {
+  const guidance = await loadActiveGuidance(env);
+  const lessons = await loadRecentLessons(env);
+  const system = buildTutorSessionPrompt({ tutor, guidanceLines: guidance, recentLessons: lessons });
+  const messages = [
+    { role: "system", content: system },
+    { role: "user", content: message },
+  ];
+  let reply = "";
+  let source = "brain-fallback";
+  try {
+    if (env.FLSKO_GEMINI_API_KEY) {
+      try {
+        reply = await geminiChat(env, messages, 900);
+        source = "gemini-flash";
+      } catch (ge) {
+        if (env.OPENROUTER_API_KEY) {
+          reply = await openRouterChat(env, env.FLSKO_OPENROUTER_MODEL || "openrouter/free", messages, 900, 0.4);
+          source = "openrouter-fallback";
+        } else throw ge;
+      }
+    } else if (env.OPENROUTER_API_KEY) {
+      reply = await openRouterChat(env, env.FLSKO_OPENROUTER_MODEL || "openrouter/free", messages, 900, 0.4);
+      source = "openrouter";
+    } else {
+      reply = "أنا فلسقوا. استلمت توجيهك — أضِف مفتاح محادثة لتفعيل التدريب.";
+    }
+  } catch (e) {
+    reply = polishReply(
+      `أنا فلسقوا. التوجيه وصلني. (طبقة الرد مشغولة مؤقتًا: ${e instanceof Error ? e.message.slice(0, 80) : "error"})`,
+      message,
+      detectDialectHint(message),
+    );
+    source = "brain-soft-fail";
+  }
+  reply = polishReply(reply, message, detectDialectHint(message));
+  const now = Date.now();
+  await env.DB.prepare(
+    "INSERT INTO brain_tutor_messages(tutor,role,content,created_at) VALUES(?,?,?,?)"
+  ).bind(tutor, "tutor", message, now).run();
+  await env.DB.prepare(
+    "INSERT INTO brain_tutor_messages(tutor,role,content,created_at) VALUES(?,?,?,?)"
+  ).bind(tutor, "flsko", reply, now).run();
+  return { reply, source, tutor, guidanceCount: guidance.length, lessonsCount: lessons.length };
+}
+
+async function handleTutorAction(
+  env: Env,
+  tutor: TutorRole,
+  action: TutorAction,
+  body: Record<string, unknown>,
+) {
+  await ensureBrainTables(env);
+  const quota = await consumeTutorQuota(env, tutor);
+  if (!quota.ok) {
+    return {
+      error: true,
+      message: `انتهت الحصة اليومية للمعلّم (${quota.limit}/${quota.day}).`,
+      quota,
+    };
+  }
+
+  if (action === "chat") {
+    const message = typeof body.message === "string" ? body.message.trim() : "";
+    if (!message || message.length > 4000) return { error: true, message: "message مطلوب", quota };
+    const turn = await tutorChatTurn(env, tutor, message);
+    return { error: false, action, quota, ...turn };
+  }
+
+  if (action === "teach") {
+    const input = typeof body.input === "string" ? body.input.trim() : "";
+    const ideal = typeof body.ideal === "string" ? body.ideal.trim() : "";
+    if (input.length < 2 || ideal.length < 2) return { error: true, message: "input و ideal مطلوبان", quota };
+    await env.DB.prepare(
+      "INSERT INTO brain_lessons(tutor,input,ideal,tags,created_at) VALUES(?,?,?,?,?)"
+    ).bind(tutor, input.slice(0, 1000), ideal.slice(0, 2000), typeof body.tags === "string" ? body.tags.slice(0, 200) : "", Date.now()).run();
+    return { error: false, action, quota, saved: formatLessonLine(input, ideal), message: "تم حفظ الدرس — سيُحقَن في محادثات المستخدمين." };
+  }
+
+  if (action === "evaluate") {
+    const score = clampScore(body.score);
+    const sampleUser = typeof body.sampleUser === "string" ? body.sampleUser.slice(0, 1000) : "";
+    const sampleReply = typeof body.sampleReply === "string" ? body.sampleReply.slice(0, 2000) : "";
+    const notes = typeof body.notes === "string" ? body.notes.slice(0, 1000) : "";
+    await env.DB.prepare(
+      "INSERT INTO brain_evaluations(tutor,sample_user,sample_reply,score,notes,created_at) VALUES(?,?,?,?,?,?)"
+    ).bind(tutor, sampleUser, sampleReply, score, notes, Date.now()).run();
+    return { error: false, action, quota, score, message: "تم تسجيل التقييم." };
+  }
+
+  if (action === "guide") {
+    const rule = typeof body.rule === "string" ? body.rule.trim() : "";
+    if (rule.length < 3) return { error: true, message: "rule مطلوب", quota };
+    await env.DB.prepare(
+      "INSERT INTO brain_guidance(tutor,rule,active,created_at) VALUES(?,?,1,?)"
+    ).bind(tutor, rule.slice(0, 800), Date.now()).run();
+    return { error: false, action, quota, rule, message: "تم تفعيل قاعدة التوجيه." };
+  }
+
+  if (action === "inspect") {
+    const lessons = await loadRecentLessons(env);
+    const guidance = await loadActiveGuidance(env);
+    const evals = await env.DB.prepare(
+      "SELECT score, notes, created_at as createdAt FROM brain_evaluations ORDER BY id DESC LIMIT 8"
+    ).all();
+    const avg = await env.DB.prepare("SELECT AVG(score) as avgScore, COUNT(*) as n FROM brain_evaluations").first<{ avgScore: number; n: number }>();
+    return {
+      error: false,
+      action,
+      quota,
+      lessons,
+      guidance,
+      recentEvaluations: evals.results,
+      averageScore: avg?.avgScore ?? null,
+      evaluationCount: avg?.n ?? 0,
+      identity: "فلسقوا / Flsko",
+      creator: "علي يوسف",
+    };
+  }
+
+  return { error: true, message: "action غير معروف", quota };
+}
+
 async function runChat(message: string, mode: string, user: Record<string, unknown>, env: Env, options?: { liveVoice?: boolean }) {
   // ——— عقل فلسقوا: نية + لهجة + رد مباشر عند الحاجة ———
   const intent = classifyIntent(message);
@@ -579,13 +798,18 @@ async function runChat(message: string, mode: string, user: Record<string, unkno
   }
 
   const userContext = await buildUserContext(user, env);
-  const system = buildBrainSystemPrompt({
+  let system = buildBrainSystemPrompt({
     mode,
     userContext,
     liveVoice: options?.liveVoice,
     dialectHint,
     extra: options?.liveVoice ? VOICE_LIVE_BOOTSTRAP : undefined,
   });
+  try {
+    await ensureBrainTables(env);
+    const lessons = await loadRecentLessons(env);
+    system = injectLessonsIntoPrompt(system, lessons);
+  } catch { /* non-fatal */ }
   const messages = [{ role: "system", content: system }, { role: "user", content: message }];
   const providers: Array<{ id: string; kind: "chat"; priority: number; execute: () => Promise<string> }> = [];
 
@@ -853,6 +1077,16 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(origin) });
     const url = new URL(request.url);
     if (url.pathname === "/" || url.pathname === "/api/health") return json({ ok: true, service: "flsko-api", database: "d1", timestamp: Date.now() }, 200, origin);
+    // Tutor channel (Grok / Manus): POST /api/brain/tutor
+    if (url.pathname === "/api/brain/tutor" && request.method === "POST") {
+      const tutor = authorizeTutor(request, env);
+      if (!tutor) return json({ error: "unauthorized" }, 401, origin);
+      const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+      const action = (typeof body.action === "string" ? body.action : "chat") as TutorAction;
+      const result = await handleTutorAction(env, tutor, action, body);
+      return json(result, result.error ? 429 : 200, origin);
+    }
+
     if (url.pathname === "/privacy") return legalPage("سياسة الخصوصية", "<p>يستخدم Flsko بيانات الحساب اللازمة لتسجيل الدخول، ورسائلك وطلبات الوسائط والذكريات التي تمنحها موافقة صريحة. تُرسل الطلبات إلى خادم Flsko وقد تُعالج عبر مزودات ذكاء اصطناعي سحابية أو مفتوحة متاحة. لا يطلب Flsko كلمة مرور Google ولا يضع مفاتيح المزودات داخل الهاتف.</p><p>يمكنك إدارة الذكريات من التطبيق وطلب حذف الحساب والبيانات المرتبطة به عبر قناة الاقتراحات الرسمية. لا تستخدم الخدمة لإرسال معلومات حساسة لا تريد معالجتها سحابيًا. تُحدّث هذه السياسة عند تغير المعالجة أو المزودات.</p>");
     if (url.pathname === "/terms") return legalPage("شروط الاستخدام", "<p>باستخدام Flsko أو تسجيل الدخول إليه، توافق على هذه الشروط. Flsko وكيل مساعد وقد تخطئ نتائجه أو تتأخر، ولا تشكل النتائج استشارة طبية أو قانونية أو مالية.</p><p>أنت مسؤول عن طلباتك وملفاتك. يحظر انتهاك حقوق الآخرين أو انتحال الأشخاص أو إنشاء محتوى ضار أو التحايل على حدود الخدمة. تعود هوية Flsko والمواد التي يملكها المشروع إلى علي يوسف. الخدمة مجانية تجريبيًا وقد تتغير إتاحتها وحدودها.</p>");
     if (url.pathname === "/download") return legalPage("تحميل Flsko", "<p>هذه هي الصفحة الرسمية لمشروع Flsko. رابط ملف Android سيُضاف هنا بعد إنشاء نسخة APK أو AAB موقعة وآمنة.</p><p>لا تثبّت ملفات تحمل اسم Flsko من مصادر غير موثوقة. اقرأ <a href=\"/privacy\">سياسة الخصوصية</a> و<a href=\"/terms\">شروط الاستخدام</a> قبل الاستخدام.</p>");
@@ -869,6 +1103,15 @@ export default {
         if (path === "memory.remember") { const value = input || {}; if (value.consent !== true || typeof value.category !== "string" || typeof value.content !== "string") return trpcError("الفئة والمحتوى والموافقة مطلوبة", 400, origin); await env.DB.prepare("INSERT INTO memories(user_id,category,content,consent) VALUES(?,?,?,1)").bind(user.id, value.category.slice(0, 64), value.content.slice(0, 1200)).run(); return trpcResult({ accepted: true }, origin); }
         if (path === "profile.get") { const profile = await env.DB.prepare("SELECT display_name as displayName, gender, avatar_url as avatarUrl, about, governorate, chat_background as chatBackground, voice_gender as voiceGender FROM profiles WHERE user_id=?").bind(user.id).first(); return trpcResult(profile, origin); }
         if (path === "profile.save") { const value = input || {}; await env.DB.prepare("INSERT INTO profiles(user_id,display_name,gender,avatar_url,about,governorate,chat_background,voice_gender) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name,gender=excluded.gender,avatar_url=excluded.avatar_url,about=excluded.about,governorate=excluded.governorate,chat_background=excluded.chat_background,voice_gender=excluded.voice_gender").bind(user.id, value.displayName || null, value.gender || "unspecified", value.avatarUrl || null, value.about || null, value.governorate || null, value.chatBackground || "#F4F8F7", value.voiceGender || "female").run(); return trpcResult(value, origin); }
+        if (path === "brain.tutor") {
+          const tutor = authorizeTutor(request, env);
+          if (!tutor) return trpcError("غير مصرّح — أرسل X-Flsko-Tutor-Secret", 401, origin);
+          const value = input || {};
+          const action = (typeof value.action === "string" ? value.action : "chat") as TutorAction;
+          const result = await handleTutorAction(env, tutor, action, value as Record<string, unknown>);
+          if (result.error) return trpcError(String(result.message || "خطأ"), 429, origin);
+          return trpcResult(result, origin);
+        }
         if (path === "agent.chat") { const value = input || {}; const message = typeof value.message === "string" ? value.message.trim() : ""; if (!message || message.length > 6000) return trpcError("الرسالة مطلوبة وبحد أقصى 6000 حرف", 400, origin); const mode = value.mode === "pro-max" ? "برو ماكس" : value.mode === "pro" ? "برو" : "طبيعي وسريع"; return trpcResult(await runChat(message, mode, user, env), origin); }
         if (path === "agent.generate") { const value = input || {}; if (typeof value.prompt !== "string" || value.prompt.trim().length < 3) return trpcError("نوع الوسائط أو الوصف غير صالح", 400, origin); if (value.kind === "video") return trpcResult(await submitWanVideo(value.prompt.trim(), env), origin); if (value.kind !== "image") return trpcError("نوع الوسائط غير صالح", 400, origin); return trpcResult(await generateOpenImage(value.prompt.trim(), env), origin); }
         if (path === "agent.mediaJob") { const value = input || {}; if (typeof value.jobId !== "string" || value.jobId.length < 8) return trpcError("رقم المهمة غير صالح", 400, origin); return trpcResult(await pollWanVideo(value.jobId, env), origin); }

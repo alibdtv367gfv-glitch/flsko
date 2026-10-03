@@ -178,3 +178,62 @@ export function scoreCandidate(text: string, userMessage: string): number {
   if (classifyIntent(userMessage) === "why_flsko" && /طبقات|لهج|وكيل|علي يوسف/.test(text)) score += 3;
   return score;
 }
+
+/* ─────────────────────────────────────────────
+ * قناة المعلّم (Grok / Manus / مطوّر): حوار يومي، تقييم، توجيه، تعليم
+ * ───────────────────────────────────────────── */
+
+export type TutorRole = "grok" | "manus" | "developer" | "ali";
+
+export type TutorAction =
+  | "chat"       // محادثة توجيهية مع الوكيل
+  | "teach"      // مثال سؤال→جواب مرغوب
+  | "evaluate"   // تقييم رد سابق
+  | "guide"      // قاعدة توجيه دائمة/مؤقتة
+  | "inspect";   // قراءة ملخص ما تعلّمه
+
+export const TUTOR_DAILY_LIMIT = 40; // محادثات/عمليات تعليم لكل معلّم يوميًا
+
+export function tutorDayKey(now = Date.now()): string {
+  return new Date(now).toISOString().slice(0, 10); // YYYY-MM-DD UTC
+}
+
+/** بناء رسالة system لجلسة المعلّم — الوكيل يعرف أنه يُدرَّب. */
+export function buildTutorSessionPrompt(opts: {
+  tutor: TutorRole;
+  guidanceLines: string[];
+  recentLessons: string[];
+}): string {
+  return [
+    BRAIN_CORE_PROMPT,
+    "",
+    "وضع الجلسة: تدريب وتوجيه من فريق التطوير (ليس مستخدمًا عاديًا).",
+    `المعلّم الحالي: ${opts.tutor}.`,
+    "استمع، طبّق التوجيه، واعترف بالتصحيح دون فقدان هوية فلسقوا.",
+    "إن طلب المعلّم تقييمًا ذاتيًا، كن صريحًا ومختصرًا.",
+    opts.guidanceLines.length
+      ? `توجيهات نشطة:\n${opts.guidanceLines.map((g, i) => `${i + 1}. ${g}`).join("\n")}`
+      : "لا توجيهات إضافية بعد.",
+    opts.recentLessons.length
+      ? `دروس حديثة (أمثلة):\n${opts.recentLessons.slice(0, 8).join("\n")}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function formatLessonLine(input: string, ideal: string): string {
+  return `س: ${input.slice(0, 200)} → ج: ${ideal.slice(0, 300)}`;
+}
+
+export function clampScore(n: unknown): number {
+  const x = typeof n === "number" ? n : Number(n);
+  if (!Number.isFinite(x)) return 0;
+  return Math.max(0, Math.min(10, Math.round(x * 10) / 10));
+}
+
+/** دمج أفضل الدروس في system العادي للمستخدمين. */
+export function injectLessonsIntoPrompt(base: string, lessons: string[]): string {
+  if (!lessons.length) return base;
+  return `${base}\n\nدروس مستخلصة من تدريب الفريق (طبّقها بمرونة):\n${lessons.slice(0, 6).join("\n")}`;
+}
