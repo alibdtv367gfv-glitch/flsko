@@ -32,6 +32,16 @@ const VOICE_LIVE_BOOTSTRAP = `تعليمات جلسة صوتية مباشرة �
 3) تحدّث بشكل طبيعي وقصير مناسب للصوت (جمل واضحة، بدون قوائم طويلة إلا عند الحاجة).
 4) استخدم معلومات المستخدم أدناه لجعل الحوار سلسًا ومنطقيًا، دون تكرارها بصوت عالٍ إلا إذا سأل.
 5) إن لم تعرف شيئًا قل ذلك بصراحة بلهجة ودّية.`;
+/** Logical wall-clock budgets so Flsko can finish media jobs. */
+const IMAGE_TIMEOUT_MS = 90_000;       // Pollinations / direct image
+const IMAGE_QUEUE_ROUNDS = 30;          // AI Horde / HF Space ~30×3s ≈ 90s
+const IMAGE_QUEUE_DELAY_MS = 3_000;
+const VIDEO_SUBMIT_TIMEOUT_MS = 45_000;
+const VIDEO_POLL_ROUNDS = 12;          // one mediaJob call ≈ 12×4s ≈ 48s internal
+const VIDEO_POLL_DELAY_MS = 4_000;
+const VIDEO_ESTIMATED_SEC = 120;       // tell client expected total wait
+const IMAGE_ESTIMATED_SEC = 45;
+
 let routerTablesReady: Promise<void> | null = null;
 
 async function ensureRouterTables(env: Env) {
@@ -129,7 +139,7 @@ async function generateOpenImage(prompt: string, env: Env) {
       if (!submit.ok) throw new Error(`AI Horde submit failed: ${submit.status}`);
       const job = await submit.json() as { id?: string };
       if (!job.id) throw new Error("AI Horde returned no job id");
-      for (let i = 0; i < 24; i++) {
+      for (let i = 0; i < IMAGE_QUEUE_ROUNDS; i++) {
         await new Promise((r) => setTimeout(r, 3000));
         const check = await fetch(`https://aihorde.net/api/v2/generate/status/${job.id}`, {
           headers: { apikey: "0000000000", "Client-Agent": "Flsko:1.0" },
@@ -146,9 +156,9 @@ async function generateOpenImage(prompt: string, env: Env) {
     { id: "pollinations-turbo", kind: "image", priority: 4, execute: async () => {
       const seed = Math.floor(Math.random() * 1_000_000);
       const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?model=turbo&width=768&height=768&nologo=true&seed=${seed}`;
-      const response = await fetch(url, { headers: { accept: "image/*" }, signal: AbortSignal.timeout(60_000) });
+      const response = await fetch(url, { headers: { accept: "image/*" }, signal: AbortSignal.timeout(IMAGE_TIMEOUT_MS) });
       if (!response.ok) throw new Error(`Pollinations turbo failed: ${response.status}`);
-      return { url, provider: "pollinations-turbo", status: "completed" as const, message: "صورة عبر Pollinations turbo (احتياط)." };
+      return { url, provider: "pollinations-turbo", status: "completed" as const, message: "صورة عبر Pollinations turbo (احتياط).", estimatedWaitSec: 0 };
     } },
     { id: "lexica-search", kind: "image", priority: 5, execute: async () => {
       // Unofficial public search — returns closest existing art, not pure generation
@@ -177,8 +187,8 @@ async function generateOpenImage(prompt: string, env: Env) {
       if (!call.ok) throw new Error(`HF FLUX space queue failed: ${call.status}`);
       const queued = await call.json().catch(() => ({})) as { event_id?: string };
       if (!queued.event_id) throw new Error("HF FLUX no event_id");
-      for (let i = 0; i < 16; i++) {
-        await new Promise((r) => setTimeout(r, 3000));
+      for (let i = 0; i < IMAGE_QUEUE_ROUNDS; i++) {
+        await new Promise((r) => setTimeout(r, IMAGE_QUEUE_DELAY_MS));
         const stream = await fetch(`${base}/gradio_api/call/infer/${encodeURIComponent(queued.event_id)}`, {
           headers: { accept: "text/event-stream", ...(env.HF_TOKEN ? { authorization: `Bearer ${env.HF_TOKEN}` } : {}) },
           signal: AbortSignal.timeout(20_000),
@@ -344,7 +354,8 @@ async function submitWanVideo(prompt: string, env: Env) {
         status: "queued" as const,
         provider: "wan-gradio",
         jobId: payload.event_id,
-        message: "أُرسل الفيديو عبر Gradio إلى Wan Space. استعلم عبر agent.mediaJob.",
+        estimatedWaitSec: VIDEO_ESTIMATED_SEC,
+        message: `أُرسل الفيديو إلى Wan Space. الانتظار المتوقع حتى ${VIDEO_ESTIMATED_SEC} ثانية — فلسقوا يتابع الطابور.`,
       };
     } },
     ...(env.FLSKO_VIDEO_PROVIDER_URL ? [{ id: "comfy-or-custom", kind: "video" as const, priority: 2, execute: async () => {
@@ -369,27 +380,47 @@ async function pollWanVideo(jobId: string, env: Env) {
   const headers: Record<string, string> = { accept: "text/event-stream", "user-agent": "Flsko/1.0" };
   if (env.HF_TOKEN) headers.authorization = `Bearer ${env.HF_TOKEN}`;
 
-  try {
-    const response = await fetch(`${space}/gradio_api/call/t2v_generation_async/${encodeURIComponent(jobId)}`, {
-      headers,
-      signal: AbortSignal.timeout(25_000),
-    });
-    const body = await response.text();
-    const complete = body.split("event: complete").pop()?.match(/data:\s*(.+)/)?.[1]?.trim();
-    if (response.ok && complete) {
-      try {
-        const data = JSON.parse(complete) as unknown;
-        const flat = JSON.stringify(data);
-        const m = flat.match(/https?:\/\/[^"\\s]+\.(mp4|webm)/i) || flat.match(/"url"\s*:\s*"(https?:[^"]+)"/i);
-        if (m) {
-          const url = (m[1] && m[1].startsWith("http") ? m[1] : m[0]).replace(/\\\//g, "/");
-          return { status: "completed" as const, provider: "wan-gradio", jobId, url, message: "اكتمل فيديو Wan عبر Gradio." };
+  for (let i = 0; i < VIDEO_POLL_ROUNDS; i++) {
+    try {
+      const response = await fetch(`${space}/gradio_api/call/t2v_generation_async/${encodeURIComponent(jobId)}`, {
+        headers,
+        signal: AbortSignal.timeout(20_000),
+      });
+      const body = await response.text();
+      if (body.includes("event: complete")) {
+        const complete = body.split("event: complete").pop()?.match(/data:\s*(.+)/)?.[1]?.trim();
+        if (complete) {
+          try {
+            const data = JSON.parse(complete) as unknown;
+            const flat = JSON.stringify(data);
+            const m = flat.match(/https?:\/\/[^"\s]+\.(mp4|webm)/i) || flat.match(/"url"\s*:\s*"(https?:[^"]+)"/i);
+            if (m) {
+              const url = (m[1] && m[1].startsWith("http") ? m[1] : m[0]).replace(/\\\//g, "/");
+              return {
+                status: "completed" as const,
+                provider: "wan-gradio",
+                jobId,
+                url,
+                estimatedWaitSec: 0,
+                message: "اكتمل فيديو Wan — جاهز للمشاهدة.",
+              };
+            }
+          } catch { /* still processing */ }
         }
-      } catch { /* still queued */ }
-    }
-  } catch { /* still queued */ }
+      }
+    } catch { /* retry */ }
+    if (i < VIDEO_POLL_ROUNDS - 1) await new Promise((r) => setTimeout(r, VIDEO_POLL_DELAY_MS));
+  }
 
-  return { status: "queued" as const, provider: "wan-gradio", jobId, message: "الفيديو ما زال في طابور Wan (مساحة مجانية قد تتأخر)." };
+  const remaining = Math.max(15, VIDEO_ESTIMATED_SEC - VIDEO_POLL_ROUNDS * (VIDEO_POLL_DELAY_MS / 1000));
+  return {
+    status: "queued" as const,
+    provider: "wan-gradio",
+    jobId,
+    estimatedWaitSec: remaining,
+    progress: Math.min(90, Math.round((VIDEO_POLL_ROUNDS / (VIDEO_POLL_ROUNDS + 3)) * 100)),
+    message: `الفيديو ما زال قيد التوليد (متوقع ~${Math.round(remaining)} ث). أعد الاستعلام تلقائيًا.`,
+  };
 }
 async function trpcInput(request: Request, url: URL) {
   if (request.method === "GET") {

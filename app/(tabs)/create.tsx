@@ -24,19 +24,61 @@ export default function CreateScreen() {
   const { isAuthenticated } = useAuth();
   const [kind, setKind] = useState<Kind>(params.kind === "video" ? "video" : params.kind === "music" ? "music" : "image");
   const [prompt, setPrompt] = useState("");
-  const [result, setResult] = useState<{ status: string; url?: string; message?: string; provider?: string } | null>(null);
-  const mutation = trpc.agent.generate.useMutation({ onSuccess: setResult, onError: (error) => Alert.alert("لم يكتمل الطلب", error.message || "تحقق من اتصال الخادم.") });
+  const [result, setResult] = useState<{ status: string; url?: string; message?: string; provider?: string; jobId?: string; estimatedWaitSec?: number } | null>(null);
+  const [waitLeft, setWaitLeft] = useState<number | null>(null);
+  const [polling, setPolling] = useState(false);
+  const utils = trpc.useUtils();
+  const mutation = trpc.agent.generate.useMutation({
+    onSuccess: async (data) => {
+      setResult(data);
+      const est = typeof data.estimatedWaitSec === "number" ? data.estimatedWaitSec : kind === "video" ? 120 : kind === "image" ? 45 : 30;
+      if (data.status === "queued" && data.jobId) {
+        setWaitLeft(est);
+        setPolling(true);
+        // Auto-poll until complete or budget exhausted (~2–3 min for video)
+        const budgetMs = Math.max(est, 90) * 1000;
+        const started = Date.now();
+        while (Date.now() - started < budgetMs) {
+          await new Promise((r) => setTimeout(r, 8000));
+          try {
+            const job = await utils.client.agent.mediaJob.mutate({ jobId: data.jobId });
+            setResult(job);
+            if (job.status === "completed" && job.url) {
+              setWaitLeft(0);
+              setPolling(false);
+              return;
+            }
+            if (typeof job.estimatedWaitSec === "number") setWaitLeft(job.estimatedWaitSec);
+          } catch {
+            /* keep trying within budget */
+          }
+        }
+        setPolling(false);
+      } else {
+        setWaitLeft(data.status === "completed" ? 0 : est);
+        setPolling(false);
+      }
+    },
+    onError: (error) => Alert.alert("لم يكتمل الطلب", error.message || "تحقق من اتصال الخادم."),
+  });
   const musicMutation = trpc.agent.music.useMutation({ onSuccess: (data) => setResult({ status: data.status, url: data.url, message: data.message, provider: data.provider }), onError: (error) => Alert.alert("لم تكتمل الموسيقى", error.message || "تحقق من اتصال الخادم.") });
   const reportMutation = trpc.safety.report.useMutation();
   useEffect(() => { if (params.kind === "video" || params.kind === "music") setKind(params.kind); }, [params.kind]);
+  useEffect(() => {
+    if (waitLeft === null || waitLeft <= 0 || !polling) return;
+    const id = setInterval(() => setWaitLeft((s) => (s === null ? null : Math.max(0, s - 1))), 1000);
+    return () => clearInterval(id);
+  }, [waitLeft, polling]);
   const meta = kindMeta[kind];
   const helper = useMemo(() => meta.helper, [meta.helper]);
-  const busy = mutation.isPending || musicMutation.isPending;
+  const busy = mutation.isPending || musicMutation.isPending || polling;
 
   const submit = () => {
     if (!isAuthenticated) { Alert.alert("تسجيل الدخول مطلوب", "سجّل الدخول أولًا لإنشاء الوسائط وحفظها في مكتبتك السحابية.", [{ text: "لاحقًا", style: "cancel" }, { text: "تسجيل الدخول", onPress: () => void startOAuthLogin() }]); return; }
     if (prompt.trim().length < 3) { Alert.alert("اكتب وصفًا أولًا", "أضف تفاصيل المشهد أو الصورة التي تريدها."); return; }
     setResult(null);
+    setWaitLeft(kind === "video" ? 120 : kind === "image" ? 45 : 30);
+    setPolling(false);
     if (kind === "music") musicMutation.mutate({ prompt: prompt.trim() }); else mutation.mutate({ kind, prompt: prompt.trim() });
   };
 

@@ -122,6 +122,18 @@ export const appRouter = router({
           throw error;
         }
       }),
+    mediaJob: protectedProcedure
+      .input(z.object({ jobId: z.string().min(8).max(200) }))
+      .mutation(async ({ input }) => {
+        // Production path is Cloudflare Worker; reference returns queued so client timer continues.
+        return {
+          status: "queued" as const,
+          provider: "wan-gradio",
+          jobId: input.jobId,
+          estimatedWaitSec: 60,
+          message: "جارٍ متابعة مهمة الفيديو على الإنتاج.",
+        };
+      }),
     music: protectedProcedure
       .input(z.object({ prompt: z.string().trim().min(3).max(4000) }))
       .mutation(async ({ ctx, input }) => {
