@@ -34,6 +34,8 @@ export default function ChatScreen() {
   const [draft, setDraft] = useState("");
   const [voiceGender, setVoiceGender] = useState<VoiceGender>("female");
   const [chatMode, setChatMode] = useState<ChatMode>("natural");
+  const [liveVoiceMode, setLiveVoiceMode] = useState(false);
+  const [liveSessionReady, setLiveSessionReady] = useState(false);
   const [voices, setVoices] = useState<DeviceVoice[]>([]);
   const [lastPrompt, setLastPrompt] = useState("");
   const [lastSourceId, setLastSourceId] = useState<string | undefined>();
@@ -77,6 +79,7 @@ export default function ChatScreen() {
   });
   const reportMutation = trpc.safety.report.useMutation();
 
+
   const readAloud = (text: string) => {
     const selected = voices.find((voice) => voiceMatches(voice, voiceGender)) || voices[0];
     void speakArabic(text, {
@@ -85,6 +88,36 @@ export default function ChatScreen() {
       pitch: voiceGender === "female" ? 1.05 : 0.9,
     });
   };
+
+
+  const voiceSessionStart = trpc.agent.voiceSessionStart.useMutation({
+    onSuccess: (data) => {
+      setLiveSessionReady(true);
+      setLiveVoiceMode(true);
+      const assistant = { id: `${Date.now()}-live-greet`, role: "assistant" as const, content: data.greeting, sourceId: data.provider };
+      setMessages((current) => [...current, assistant]);
+      readAloud(data.greeting);
+    },
+    onError: (error) => Alert.alert("تعذر بدء المحادثة الصوتية", error.message || "حاول مرة أخرى."),
+  });
+
+  const enterLiveVoice = () => {
+    if (!isAuthenticated) {
+      Alert.alert("تسجيل الدخول مطلوب", "سجّل الدخول لبدء محادثة صوتية مباشرة مع فلسقوا.", [
+        { text: "لاحقًا", style: "cancel" },
+        { text: "تسجيل الدخول", onPress: () => void startOAuthLogin() },
+      ]);
+      return;
+    }
+    voiceSessionStart.mutate({ mode: chatMode });
+  };
+
+  const exitLiveVoice = () => {
+    setLiveVoiceMode(false);
+    setLiveSessionReady(false);
+    void stopSpeaking();
+  };
+
 
   // Pipeline: صوت → نص → رد حسب وضع الدردشة → قراءة الرد بصوت الجهاز (واحتياط سحابي)
   const voiceTurnMutation = trpc.agent.voiceTurn.useMutation({
@@ -191,6 +224,39 @@ export default function ChatScreen() {
           </View>
         </View>
 
+        <View className="mt-3 rounded-2xl border border-border bg-surface p-3">
+          <View className="flex-row items-center justify-between">
+            <Text className="text-xs font-bold text-muted">محادثة صوتية مباشرة</Text>
+            <Text className="text-[10px] text-primary">{liveVoiceMode ? "نشطة · فلسقوا" : "Gemini + تسجيل"}</Text>
+          </View>
+          <Text className="mt-1 text-[10px] leading-5 text-muted">
+            يبدأ فلسقوا الجلسة بهويته فقط (بدون ذكر نماذج أخرى) مع سياق ملفك، ثم تسجّل مقاطعًا ويرد صوتًا.
+          </Text>
+          <View className="mt-2 flex-row gap-2">
+            {!liveVoiceMode ? (
+              <Pressable
+                onPress={enterLiveVoice}
+                disabled={voiceSessionStart.isPending}
+                style={({ pressed }) => [{ flex: 1, backgroundColor: colors.primary, opacity: pressed || voiceSessionStart.isPending ? 0.75 : 1 }]}
+                className="rounded-xl px-3 py-3"
+              >
+                <Text className="text-center text-xs font-bold" style={{ color: colors.background }}>
+                  {voiceSessionStart.isPending ? "يجهّز الجلسة…" : "🎙 دخول المحادثة الصوتية"}
+                </Text>
+              </Pressable>
+            ) : (
+              <>
+                <Pressable onPress={exitLiveVoice} style={({ pressed }) => [{ flex: 1, borderWidth: 1, borderColor: colors.border, opacity: pressed ? 0.8 : 1 }]} className="rounded-xl bg-background px-3 py-3">
+                  <Text className="text-center text-xs font-bold text-muted">إنهاء الجلسة</Text>
+                </Pressable>
+                <View style={{ flex: 1, backgroundColor: colors.primary + "22" }} className="items-center justify-center rounded-xl px-3 py-3">
+                  <Text className="text-center text-[10px] font-bold text-primary">{liveSessionReady ? "جاهز — اضغط تسجيل وتكلم" : "جارٍ التحضير"}</Text>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+
         <ScrollView className="mt-5 flex-1 rounded-3xl" style={{ backgroundColor: profile.data?.chatBackground || colors.background }} contentContainerStyle={{ gap: 12, padding: 12, paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
           {messages.map((message) => (
             <View key={message.id} className={`max-w-[88%] rounded-3xl p-4 ${message.role === "user" ? "self-start bg-primary" : "self-end border border-border bg-surface"}`}>
@@ -207,7 +273,7 @@ export default function ChatScreen() {
         <View className="mb-2 flex-row items-end gap-2 rounded-3xl border border-border bg-surface p-2">
           <Pressable onPress={() => router.push("/(tabs)/library")} style={({ pressed }) => [pressed && { opacity: 0.7 }]} className="h-12 w-12 items-center justify-center rounded-2xl border border-border"><Text className="text-xl text-primary">＋</Text></Pressable>
           <TextInput value={draft} onChangeText={setDraft} multiline textAlign="right" placeholder="اكتب ما يدور ببالك..." placeholderTextColor={colors.muted} className="max-h-28 min-h-[48px] flex-1 px-3 py-3 text-base text-foreground" />
-          <Pressable onPress={() => void toggleRecording()} disabled={transcribeMutation.isPending || voiceTurnMutation.isPending} style={({ pressed }) => [{ backgroundColor: recorderState.isRecording ? colors.error : colors.background }, pressed && { opacity: 0.75 }]} className="h-12 min-w-[52px] items-center justify-center rounded-2xl border border-border"><Text className="text-xs font-bold" style={{ color: recorderState.isRecording ? colors.background : colors.primary }}>{voiceTurnMutation.isPending ? "يرد…" : transcribeMutation.isPending ? "يفهم" : recorderState.isRecording ? "إيقاف" : "تسجيل"}</Text></Pressable>
+          <Pressable onPress={() => void toggleRecording()} disabled={transcribeMutation.isPending || voiceTurnMutation.isPending} style={({ pressed }) => [{ backgroundColor: recorderState.isRecording ? colors.error : colors.background }, pressed && { opacity: 0.75 }]} className="h-12 min-w-[52px] items-center justify-center rounded-2xl border border-border"><Text className="text-xs font-bold" style={{ color: recorderState.isRecording ? colors.background : colors.primary }}>{voiceTurnMutation.isPending ? "يرد…" : transcribeMutation.isPending ? "يفهم" : recorderState.isRecording ? "إيقاف" : (liveVoiceMode ? "تحدث" : "تسجيل")}</Text></Pressable>
           <Pressable onPress={send} style={({ pressed }) => [pressed && { opacity: 0.75 }]} className="h-12 w-12 items-center justify-center rounded-2xl bg-primary"><Text className="text-xl font-black text-background">↑</Text></Pressable>
         </View>
       </KeyboardAvoidingView>

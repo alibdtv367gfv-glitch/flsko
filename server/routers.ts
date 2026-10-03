@@ -140,6 +140,20 @@ export const appRouter = router({
           throw error;
         }
       }),
+    voiceSessionStart: protectedProcedure
+      .input(z.object({ mode: z.enum(["natural", "pro", "pro-max"]).default("natural") }))
+      .mutation(async ({ ctx, input }) => {
+        assertRateLimit(ctx.user.id, "voice-session", 20);
+        // Identity bootstrap is enforced on Cloudflare Worker production path.
+        return {
+          session: "voice-live",
+          provider: "flsko",
+          identity: "فلسقوا",
+          mode: input.mode,
+          greeting: "أهلًا، أنا فلسقوا. احكِ متى ما جاهز.",
+          message: "جلسة صوتية مباشرة — يُكمَل التهيئة على خادم الإنتاج.",
+        };
+      }),
     /** Voice conversation: STT → chat → returns text (client speaks via device TTS). */
     voiceTurn: protectedProcedure
       .input(z.object({

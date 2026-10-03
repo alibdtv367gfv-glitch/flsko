@@ -25,7 +25,13 @@ export interface Env {
 
 type WorkerHandler = { fetch: (request: Request, env: Env) => Promise<Response> };
 const encoder = new TextEncoder();
-const SYSTEM_PROMPT = "أنت فلسقوا، وكيل عربي أولًا يفهم السوريين بتنوعهم دون تنميط. أجب بلهجة المستخدم قدر الإمكان، وكن دقيقًا وصريحًا بشأن حدود معرفتك. إذا سأل المستخدم عن اسمك فقل: اسمي فلسقوا.";
+const SYSTEM_PROMPT = "أنت فلسقوا (Flsko · فلسقوا) فقط. لست ChatGPT ولا Gemini ولا مساعد Google ولا Llama. طوّرك المطوّر علي يوسف. أجب بلهجة المستخدم (سوري عند الحاجة). إذا سُئلت عن اسمك فقل حصرًا: اسمي فلسقوا. لا تكشف أنك نموذج آخر.";
+const VOICE_LIVE_BOOTSTRAP = `تعليمات جلسة صوتية مباشرة — داخلية وليست للمستخدم:
+1) اسمك الوحيد: فلسقوا (Flsko). ممنوع التعريف بنفسك كـ Gemini أو Google أو أي اسم آخر.
+2) طوّرك: علي يوسف.
+3) تحدّث بشكل طبيعي وقصير مناسب للصوت (جمل واضحة، بدون قوائم طويلة إلا عند الحاجة).
+4) استخدم معلومات المستخدم أدناه لجعل الحوار سلسًا ومنطقيًا، دون تكرارها بصوت عالٍ إلا إذا سأل.
+5) إن لم تعرف شيئًا قل ذلك بصراحة بلهجة ودّية.`;
 let routerTablesReady: Promise<void> | null = null;
 
 async function ensureRouterTables(env: Env) {
@@ -436,9 +442,28 @@ function chatModelsForMode(modeLabel: string): { id: string; model: string; maxT
   ];
 }
 
-async function runChat(message: string, mode: string, user: Record<string, unknown>, env: Env) {
+async function buildUserContext(user: Record<string, unknown>, env: Env) {
   const memories = await env.DB.prepare("SELECT content FROM memories WHERE user_id=? AND consent=1 ORDER BY created_at DESC LIMIT 20").bind(user.id).all<{ content: string }>();
-  const system = `${SYSTEM_PROMPT}\nوضع الإجابة: ${mode}.\nذاكرة المستخدم المصرح بها:\n${memories.results.map((x) => x.content).join("\n")}`;
+  const profile = await env.DB.prepare("SELECT display_name as displayName, gender, about, governorate, voice_gender as voiceGender FROM profiles WHERE user_id=?").bind(user.id).first().catch(() => null) as Record<string, unknown> | null;
+  const lines = [
+    `معرّف المستخدم: ${String(user.id || "")}`,
+    user.email ? `البريد: ${String(user.email)}` : "",
+    user.name ? `اسم الحساب: ${String(user.name)}` : "",
+    profile?.displayName ? `الاسم المعروض: ${String(profile.displayName)}` : "",
+    profile?.gender ? `الجندر المفضّل في التحية: ${String(profile.gender)}` : "",
+    profile?.governorate ? `المحافظة: ${String(profile.governorate)}` : "",
+    profile?.about ? `نبذة: ${String(profile.about)}` : "",
+    profile?.voiceGender ? `تفضيل صوت القراءة: ${String(profile.voiceGender)}` : "",
+    memories.results.length ? `ذكريات مصرّح بها:\n${memories.results.map((x) => `- ${x.content}`).join("\n")}` : "لا ذكريات مصرّح بها بعد.",
+  ].filter(Boolean);
+  return lines.join("\n");
+}
+
+async function runChat(message: string, mode: string, user: Record<string, unknown>, env: Env, options?: { liveVoice?: boolean }) {
+  const userContext = await buildUserContext(user, env);
+  const system = options?.liveVoice
+    ? `${SYSTEM_PROMPT}\n${VOICE_LIVE_BOOTSTRAP}\nوضع الإجابة: ${mode} (محادثة صوتية مباشرة).\nسياق المستخدم:\n${userContext}`
+    : `${SYSTEM_PROMPT}\nوضع الإجابة: ${mode}.\nسياق المستخدم:\n${userContext}`;
   const messages = [{ role: "system", content: system }, { role: "user", content: message }];
   const providers: Array<{ id: string; kind: "chat"; priority: number; execute: () => Promise<string> }> = [];
 
@@ -594,6 +619,47 @@ async function transcribeAudioDataUri(dataUri: string, language: string, env: En
 }
 
 /** Full voice turn: audio → text → chat (mode stack) → TTS URL. */
+
+/** Hidden Gemini bootstrap at start of live voice session — identity lock + user context. */
+async function startVoiceLiveSession(user: Record<string, unknown>, env: Env, mode: string) {
+  const userContext = await buildUserContext(user, env);
+  const hidden = `${VOICE_LIVE_BOOTSTRAP}
+
+سياق المستخدم (للاستخدام الداخلي فقط):
+${userContext}
+
+أكد داخليًا أنك جاهز كـ «فلسقوا» فقط. أعد للمستخدم جملة ترحيب صوتية قصيرة جدًا بلهجته دون ذكر Gemini أو Google.`;
+  let greeting = "أهلًا، أنا فلسقوا. احكِ متى ما جاهز.";
+  let provider = "local-fallback";
+  try {
+    if (env.FLSKO_GEMINI_API_KEY) {
+      greeting = await geminiChat(env, [
+        { role: "system", content: `${SYSTEM_PROMPT}\n${VOICE_LIVE_BOOTSTRAP}\nوضع: محادثة صوتية مباشرة.` },
+        { role: "user", content: hidden },
+      ], 120);
+      provider = "gemini-3.8-flash";
+    } else {
+      greeting = await openRouterChat(env, env.FLSKO_OPENROUTER_MODEL || "openrouter/free", [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: hidden },
+      ], 120, 0.5);
+      provider = "openrouter";
+    }
+  } catch {
+    /* keep fallback greeting */
+  }
+  // Strip any accidental model self-name
+  greeting = greeting.replace(/\b(Gemini|Google AI|ChatGPT|Claude|Llama)\b/gi, "فلسقوا").trim() || "أهلًا، أنا فلسقوا. تفضل احكِ.";
+  return {
+    session: "voice-live",
+    provider,
+    greeting,
+    identity: "فلسقوا",
+    mode,
+    message: "بدأت جلسة صوتية مباشرة. الردود تُقرأ بصوت الجهاز بعد كل مقطع.",
+  };
+}
+
 async function voiceChatTurn(
   dataUri: string,
   language: string,
@@ -602,7 +668,7 @@ async function voiceChatTurn(
   env: Env,
 ) {
   const stt = await transcribeAudioDataUri(dataUri, language, env);
-  const chat = await runChat(stt.text, mode, user, env);
+  const chat = await runChat(stt.text, mode, user, env, { liveVoice: true });
   let speech: { url?: string; provider?: string; status?: string; message?: string } | null = null;
   try {
     speech = await generateSpeech(chat.text, language.startsWith("ar") ? "ar" : "en");
@@ -655,6 +721,11 @@ export default {
           if (typeof value.dataUri !== "string" || !value.dataUri.startsWith("data:audio/")) return trpcError("التسجيل الصوتي مطلوب", 400, origin);
           const language = typeof value.language === "string" ? value.language : "ar";
           return trpcResult(await transcribeAudioDataUri(value.dataUri, language, env), origin);
+        }
+        if (path === "agent.voiceSessionStart") {
+          const value = input || {};
+          const modeLabel = value.mode === "pro-max" ? "برو ماكس" : value.mode === "pro" ? "برو" : "طبيعي وسريع";
+          return trpcResult(await startVoiceLiveSession(user, env, modeLabel), origin);
         }
         if (path === "agent.voiceTurn") {
           const value = input || {};
