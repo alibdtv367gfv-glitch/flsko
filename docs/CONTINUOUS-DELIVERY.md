@@ -30,3 +30,5 @@ cd cloudflare && npx wrangler deploy
 - `eas build --profile production`
 - `eas update` للتعديلات السريعة على نفس runtimeVersion
 - حدّث `minVersion` على Worker إن لزم إجبار الترقية
+---
+Expo SDK: **57** (React Native 0.86) — required for current Expo Go on phones.
