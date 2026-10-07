@@ -326,15 +326,22 @@ async function registerWithEmail(env: Env, email: string, password: string, name
   const normalized = email.trim().toLowerCase();
   if (!isValidEmail(normalized)) throw new Error("البريد غير صالح");
   if (password.length < 8 || password.length > 128) throw new Error("كلمة المرور من 8 إلى 128 حرفًا");
-  const existing = await env.DB.prepare("SELECT id, password_hash FROM users WHERE lower(email)=?").bind(normalized).first<{ id: number; password_hash: string | null }>();
-  if (existing?.password_hash) throw new Error("هذا البريد مسجّل مسبقًا — جرّب تسجيل الدخول");
+  const existing = await env.DB.prepare(
+    "SELECT id, password_hash, open_id as openId, login_method as loginMethod FROM users WHERE lower(email)=?"
+  ).bind(normalized).first<{ id: number; password_hash: string | null; openId: string; loginMethod: string | null }>();
+  // منع حسابين بنفس البريد مهما كانت طريقة الدخول السابقة
+  if (existing) {
+    if (existing.password_hash) {
+      throw new Error("هذا البريد مسجّل مسبقًا — استخدم تسجيل الدخول أو استعادة كلمة المرور");
+    }
+    throw new Error("هذا البريد مرتبط بحساب موجود (مثل Google). سجّل الدخول بذلك الحساب بدل إنشاء حساب جديد");
+  }
+  const openIdClash = await env.DB.prepare("SELECT id FROM users WHERE open_id=?").bind(`email:${normalized}`).first();
+  if (openIdClash) throw new Error("هذا البريد مسجّل مسبقًا — جرّب تسجيل الدخول");
+
   const { hash, salt } = await hashPasswordPbkdf2(password);
   const openId = `email:${normalized}`;
   const display = (name || normalized.split("@")[0] || "مستخدم").slice(0, 80);
-  if (existing) {
-    await env.DB.prepare("UPDATE users SET password_hash=?, password_salt=?, login_method=?, name=?, last_signed_in=? WHERE id=?").bind(hash, salt, "email", display, new Date().toISOString(), existing.id).run();
-    return existing.id;
-  }
   await env.DB.prepare(
     "INSERT INTO users(open_id,name,email,password_hash,password_salt,login_method,last_signed_in) VALUES(?,?,?,?,?,?,?)"
   ).bind(openId, display, normalized, hash, salt, "email", new Date().toISOString()).run();

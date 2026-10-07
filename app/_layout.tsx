@@ -5,7 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
-import { ActivityIndicator, Platform, Pressable, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import * as Network from "expo-network";
 import "@/lib/_core/nativewind-pressable";
 import { ThemeProvider } from "@/lib/theme-provider";
@@ -45,6 +45,8 @@ function AuthGate() {
   const [resetCode, setResetCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [resetInfo, setResetInfo] = useState<string | null>(null);
+  const [emailNoticeVisible, setEmailNoticeVisible] = useState(false);
+  const [emailNoticeAccepted, setEmailNoticeAccepted] = useState(false);
   const isOAuthCallback = segments[0] === "oauth";
   const isPublicPage = segments[0] === "privacy" || segments[0] === "terms" || segments[0] === "download";
   const handleLogin = async () => {
@@ -107,7 +109,7 @@ function AuthGate() {
     }
   };
 
-  const handleEmailAuth = async () => {
+  const handleEmailAuth = async (opts?: { confirmed?: boolean }) => {
     if (loginBusy) return;
     setLoginError(null);
     if (networkState.isInternetReachable === false) {
@@ -117,6 +119,11 @@ function AuthGate() {
     const em = email.trim();
     if (!em || password.length < 8) {
       setLoginError("أدخل بريدًا صالحًا وكلمة مرور من 8 أحرف على الأقل.");
+      return;
+    }
+    // إشعار النسخة الأولى قبل الدخول/التسجيل بالبريد
+    if (!opts?.confirmed && !emailNoticeAccepted) {
+      setEmailNoticeVisible(true);
       return;
     }
     setLoginBusy(true);
@@ -207,6 +214,47 @@ function AuthGate() {
         </Pressable>
         <Text className="mt-3 text-center text-xs leading-5 text-muted">Google خيار مستقل. كلمة المرور تُشفَّر ولا تُخزَّن بشكل صريح.</Text>
       </View>
+
+      <Modal visible={emailNoticeVisible} transparent animationType="fade" onRequestClose={() => setEmailNoticeVisible(false)}>
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "center", padding: 20 }}>
+          <View className="max-w-md self-center w-full rounded-3xl border border-border bg-surface p-5">
+            <Text className="text-center text-lg font-black text-foreground">تنبيه مهم — النسخة الأولى</Text>
+            <ScrollView style={{ maxHeight: 280 }} className="mt-3">
+              <Text className="text-sm leading-7 text-muted text-right">
+                تطبيق فلسقوا في نسخته الأولى. استعادة كلمة المرور عبر البريد غير مكتملة بالكامل بعد (إرسال الرمز للبريد يحتاج إعدادًا إضافيًا).
+                {"\n\n"}
+                احفظ كلمة المرور في مكان آمن. إن نسيتها قد تفقد الوصول لحساب البريد مؤقتًا.
+                {"\n\n"}
+                هذه مشكلة مؤقتة وسيتم حلها مع الإصدار الثاني من التطبيق.
+                {"\n\n"}
+                للحفظ الأأمن لبياناتك الآن: يمكنك تسجيل الدخول عبر Google بدلًا من البريد.
+              </Text>
+            </ScrollView>
+            <Pressable
+              onPress={() => {
+                setEmailNoticeAccepted(true);
+                setEmailNoticeVisible(false);
+                void handleEmailAuth({ confirmed: true });
+              }}
+              className="mt-4 w-full rounded-2xl bg-primary px-4 py-4"
+            >
+              <Text className="text-center text-base font-black text-white">فهمت — متابعة بالبريد</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                setEmailNoticeVisible(false);
+                void handleLogin();
+              }}
+              className="mt-2 w-full rounded-2xl border border-primary px-4 py-3"
+            >
+              <Text className="text-center text-sm font-bold text-primary">التسجيل عبر Google (أأمن حاليًا)</Text>
+            </Pressable>
+            <Pressable onPress={() => setEmailNoticeVisible(false)} className="mt-2 py-2">
+              <Text className="text-center text-xs text-muted">إلغاء</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </ScreenContainer>
   );
   return <Stack screenOptions={{ headerShown: false }}><Stack.Screen name="(tabs)" /><Stack.Screen name="privacy" /><Stack.Screen name="terms" /><Stack.Screen name="suggestions" /><Stack.Screen name="download" /><Stack.Screen name="development" /><Stack.Screen name="admin-suggestions" /></Stack>;
