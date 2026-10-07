@@ -1567,11 +1567,11 @@ export default {
     if (url.pathname === "/api/app/version" && request.method === "GET") {
       return jsonCached("app-version", 60_000, origin, () => ({
         minVersion: "1.0.0",
-        latestVersion: "1.0.1",
+        latestVersion: "1.0.0",
         otaEnabled: true,
         forceUpdate: false,
         channel: "production",
-        messageAr: "يتوفر تحسينات على فلسقوا. حدّث عند توفر نسخة المتجر أو انتظر التحديث التلقائي داخل التطبيق.",
+        messageAr: "فلسقوا 1.0 — نسخة تجريبية أولى. نحدّث التجربة باستمرار؛ حدّث التطبيق عند توفر إصدار جديد.",
         storeUrlAndroid: "",
         storeUrlIos: "",
         features: {

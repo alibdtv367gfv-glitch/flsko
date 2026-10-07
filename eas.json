@@ -17,7 +17,8 @@
         "gradleCommand": ":app:assembleRelease"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://flsko-api.flsko.workers.dev"
+        "EXPO_PUBLIC_API_BASE_URL": "https://flsko-api.flsko.workers.dev",
+        "EXPO_PUBLIC_APP_CHANNEL": "preview"
       }
     },
     "production": {
@@ -27,7 +28,19 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://flsko-api.flsko.workers.dev"
+        "EXPO_PUBLIC_API_BASE_URL": "https://flsko-api.flsko.workers.dev",
+        "EXPO_PUBLIC_APP_CHANNEL": "production"
+      }
+    },
+    "apk": {
+      "distribution": "internal",
+      "channel": "preview",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://flsko-api.flsko.workers.dev",
+        "EXPO_PUBLIC_APP_CHANNEL": "preview"
       }
     }
   },

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import AntDesign from "@expo/vector-icons/AntDesign";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
@@ -50,7 +51,25 @@ function AuthGate() {
   const [resetInfo, setResetInfo] = useState<string | null>(null);
   const [emailNoticeVisible, setEmailNoticeVisible] = useState(false);
   const [emailNoticeAccepted, setEmailNoticeAccepted] = useState(false);
+  const [betaWelcomeVisible, setBetaWelcomeVisible] = useState(false);
   const isOAuthCallback = segments[0] === "oauth";
+
+  useEffect(() => {
+    if (loading || !isAuthenticated) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const seen = await AsyncStorage.getItem("flsko_beta_v1_seen");
+        if (!cancelled && seen !== "1") setBetaWelcomeVisible(true);
+      } catch {
+        if (!cancelled) setBetaWelcomeVisible(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, isAuthenticated]);
+
   const isPublicPage = segments[0] === "privacy" || segments[0] === "terms" || segments[0] === "download";
   const handleLogin = async () => {
     if (loginBusy) return;
@@ -402,8 +421,49 @@ function AuthGate() {
       </Modal>
     </ScreenContainer>
   );
-  return <Stack screenOptions={{ headerShown: false }}><Stack.Screen name="(tabs)" /><Stack.Screen name="privacy" /><Stack.Screen name="terms" /><Stack.Screen name="suggestions" /><Stack.Screen name="download" /><Stack.Screen name="development" /><Stack.Screen name="admin-suggestions" /></Stack>;
+  return (
+    <>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="privacy" />
+        <Stack.Screen name="terms" />
+        <Stack.Screen name="suggestions" />
+        <Stack.Screen name="download" />
+        <Stack.Screen name="development" />
+        <Stack.Screen name="admin-suggestions" />
+      </Stack>
+      <Modal visible={betaWelcomeVisible} transparent animationType="fade" onRequestClose={() => setBetaWelcomeVisible(false)}>
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "center", padding: 22 }}>
+          <View className="w-full max-w-md self-center rounded-[28px] border border-border bg-surface p-6">
+            <Text className="text-center text-xs font-bold text-primary">Flsko · فلسقوا</Text>
+            <Text className="mt-3 text-center text-2xl font-black text-foreground">نسخة 1.0 تجريبية</Text>
+            <Text className="mt-4 text-right text-sm leading-7 text-muted">
+              مرحبًا بك في النسخة الأولى من فلسقوا.
+              {"\n\n"}
+              هذه نسخة تجريبية: قد تظهر تحسينات وأخطاء بسيطة أثناء التطوير.
+              {"\n\n"}
+              حسابك وذاكرتك محفوظان في السحابة. التحديثات المستقبلية يمكن أن تصل داخل التطبيق دون حذف بياناتك.
+            </Text>
+            <Pressable
+              onPress={async () => {
+                try {
+                  await AsyncStorage.setItem("flsko_beta_v1_seen", "1");
+                } catch {
+                  /* ignore */
+                }
+                setBetaWelcomeVisible(false);
+              }}
+              className="mt-6 w-full rounded-2xl bg-primary px-4 py-4"
+            >
+              <Text className="text-center text-base font-black text-white">حسنًا، لنبدأ</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
 }
+
 
 export default function RootLayout() {
   const network = Network.useNetworkState();
