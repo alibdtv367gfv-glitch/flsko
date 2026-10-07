@@ -6,6 +6,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import AntDesign from "@expo/vector-icons/AntDesign";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import FontAwesome from "@expo/vector-icons/FontAwesome";
 import * as Network from "expo-network";
 import "@/lib/_core/nativewind-pressable";
 import { ThemeProvider } from "@/lib/theme-provider";
@@ -172,34 +175,49 @@ function AuthGate() {
       <View className="flex-1 justify-center">
         <View className="w-full max-w-md self-center">
           {/* Brand */}
-          <View className="items-center mb-8">
-            <View className="h-16 w-16 items-center justify-center rounded-3xl bg-primary">
-              <Text className="text-2xl font-black text-white">ف</Text>
+          <View className="mb-8 items-center">
+            <View
+              className="h-[72px] w-[72px] items-center justify-center rounded-[22px]"
+              style={{ backgroundColor: "#0A7EA4", shadowColor: "#0A7EA4", shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 6 }}
+            >
+              <Text className="text-3xl font-black text-white">ف</Text>
             </View>
             <Text className="mt-4 text-3xl font-black text-foreground">فلسقوا</Text>
             <Text className="mt-1 text-sm font-bold text-primary">Flsko</Text>
-            <Text className="mt-3 text-center text-sm leading-6 text-muted px-2">
+            <Text className="mt-3 px-2 text-center text-sm leading-6 text-muted">
               سجّل الدخول أولًا — المحادثة والوسائط والذاكرة مرتبطة بحسابك.
             </Text>
           </View>
 
-          <View className="rounded-[28px] border border-border bg-surface p-5">
+          <View className="rounded-[28px] border border-border bg-surface p-5" style={{ shadowColor: "#0F172A", shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 3 }}>
             {/* 1) Google — primary */}
-            <Text className="text-xs font-bold text-muted text-right mb-2">الطريقة الموصى بها</Text>
+            <Text className="mb-2 text-right text-xs font-bold text-muted">الطريقة الموصى بها</Text>
             <Pressable
               onPress={() => void handleLogin()}
               disabled={loginBusy}
-              className="w-full rounded-2xl bg-primary px-4 py-4"
-              style={{ opacity: loginBusy ? 0.7 : 1 }}
+              className="w-full flex-row items-center justify-center gap-3 rounded-2xl px-4 py-4"
+              style={{
+                opacity: loginBusy ? 0.75 : 1,
+                backgroundColor: "#FFFFFF",
+                borderWidth: 1.5,
+                borderColor: "#DADCE0",
+                shadowColor: "#000",
+                shadowOpacity: 0.08,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 2 },
+                elevation: 2,
+              }}
             >
-              {loginBusy && authMode === "login" && !email ? (
-                <View className="flex-row items-center justify-center gap-2">
-                  <ActivityIndicator color="#fff" />
-                  <Text className="text-center text-base font-black text-white">جارٍ فتح Google…</Text>
-                </View>
+              {loginBusy ? (
+                <ActivityIndicator color="#4285F4" />
               ) : (
-                <Text className="text-center text-base font-black text-white">تسجيل الدخول عبر Google</Text>
+                <View className="h-9 w-9 items-center justify-center rounded-full" style={{ backgroundColor: "#F8F9FA" }}>
+                  <AntDesign name="google" size={22} color="#4285F4" />
+                </View>
               )}
+              <Text className="text-base font-black" style={{ color: "#3C4043" }}>
+                {loginBusy ? "جارٍ فتح Google…" : "المتابعة مع Google"}
+              </Text>
             </Pressable>
             <Text className="mt-2 text-center text-[11px] leading-5 text-muted">
               أسرع وأكثر أمانًا في النسخة الأولى — تُحفظ بياناتك مع حسابك.
@@ -211,8 +229,13 @@ function AuthGate() {
               <View className="h-px flex-1 bg-border" />
             </View>
 
-            {/* 2) Email */}
-            <Text className="text-xs font-bold text-muted text-right mb-2">البريد الإلكتروني</Text>
+            {/* 2) Email / Gmail */}
+            <View className="mb-2 flex-row items-center justify-end gap-2">
+              <Text className="text-xs font-bold text-muted">البريد الإلكتروني / Gmail</Text>
+              <View className="h-7 w-7 items-center justify-center rounded-lg" style={{ backgroundColor: "#FCE8E6" }}>
+                <MaterialIcons name="mail-outline" size={16} color="#EA4335" />
+              </View>
+            </View>
             <View className="mb-3 w-full flex-row gap-2">
               <Pressable
                 onPress={() => { setAuthMode("login"); setLoginError(null); setResetInfo(null); }}
@@ -295,9 +318,14 @@ function AuthGate() {
               <Pressable
                 onPress={() => void handleEmailAuth()}
                 disabled={loginBusy}
-                className="mt-1 w-full rounded-2xl border border-primary px-4 py-3.5"
+                className="mt-1 w-full flex-row items-center justify-center gap-2 rounded-2xl border border-primary bg-primary/5 px-4 py-3.5"
                 style={{ opacity: loginBusy ? 0.7 : 1 }}
               >
+                {loginBusy ? (
+                  <ActivityIndicator color="#0A7EA4" />
+                ) : (
+                  <MaterialIcons name="mail" size={18} color="#0A7EA4" />
+                )}
                 <Text className="text-center text-sm font-black text-primary">
                   {loginBusy ? "جارٍ…" : authMode === "register" ? "إنشاء حساب بالبريد" : "دخول بالبريد"}
                 </Text>
@@ -361,8 +389,9 @@ function AuthGate() {
                 setEmailNoticeVisible(false);
                 void handleLogin();
               }}
-              className="mt-2 w-full rounded-2xl border border-primary px-4 py-3"
+              className="mt-2 w-full flex-row items-center justify-center gap-2 rounded-2xl border border-primary px-4 py-3"
             >
+              <AntDesign name="google" size={16} color="#4285F4" />
               <Text className="text-center text-sm font-bold text-primary">التسجيل عبر Google (أأمن حاليًا)</Text>
             </Pressable>
             <Pressable onPress={() => setEmailNoticeVisible(false)} className="mt-2 py-2">
