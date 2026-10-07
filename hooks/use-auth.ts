@@ -59,18 +59,54 @@ async function fetchUserOnce(force = false): Promise<Auth.User | null> {
         return sharedUser;
       }
 
+      // Native: session token in SecureStore survives app restarts.
+      // Re-login only if token missing, server rejects (401), or user logged out.
       const sessionToken = await Auth.getSessionToken();
       if (!sessionToken) {
         sharedUser = null;
+        sharedError = null;
         return null;
       }
-      sharedUser = await Auth.getUserInfo();
-      sharedError = null;
-      return sharedUser;
+      try {
+        const apiUser = await Api.getMe();
+        const next = userFromApi(apiUser);
+        if (next) {
+          sharedUser = next;
+          sharedError = null;
+          await Auth.setUserInfo(next, { notify: false }).catch(() => undefined);
+          return sharedUser;
+        }
+        // Token present but user gone → clear local session only
+        await Auth.removeSessionToken();
+        await Auth.clearUserInfo();
+        sharedUser = null;
+        return null;
+      } catch (apiErr) {
+        const msg = apiErr instanceof Error ? apiErr.message : "";
+        // Network errors: keep cached user so app stays logged in offline briefly
+        if (/network|fetch|timeout|Failed to fetch|Network/i.test(msg)) {
+          sharedUser = await Auth.getUserInfo();
+          sharedError = null;
+          return sharedUser;
+        }
+        // Auth rejected → force re-login
+        if (/401|unauthorized|unauth|تسجيل الدخول|session/i.test(msg)) {
+          await Auth.removeSessionToken();
+          await Auth.clearUserInfo();
+          sharedUser = null;
+          sharedError = null;
+          return null;
+        }
+        // Fallback: cached profile if available
+        sharedUser = await Auth.getUserInfo();
+        sharedError = apiErr instanceof Error ? apiErr : new Error("Failed to fetch user");
+        return sharedUser;
+      }
     } catch (err) {
       sharedError = err instanceof Error ? err : new Error("Failed to fetch user");
-      sharedUser = null;
-      return null;
+      // Do not wipe token on unexpected errors
+      sharedUser = await Auth.getUserInfo().catch(() => null);
+      return sharedUser;
     } finally {
       inFlightFetch = null;
     }

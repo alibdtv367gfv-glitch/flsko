@@ -117,6 +117,12 @@ export async function exchangeOAuthCode(
 }
 
 // Logout
+export async function deleteAccount(): Promise<void> {
+  await apiCall<void>("/api/auth/delete-account", {
+    method: "POST",
+  });
+}
+
 export async function logout(): Promise<void> {
   await apiCall<void>("/api/auth/logout", {
     method: "POST",

@@ -1579,6 +1579,14 @@ export default {
             return trpcError(e instanceof Error ? e.message : "فشل الدخول", 401, origin);
           }
         }
+        if (path === "account.delete" || path === "auth.deleteAccount") {
+          if (!user) return trpcError("تسجيل الدخول مطلوب", 401, origin);
+          const uid = user.id;
+          for (const sql of ["DELETE FROM sessions WHERE user_id=?", "DELETE FROM messages WHERE user_id=?", "DELETE FROM conversations WHERE user_id=?", "DELETE FROM memories WHERE user_id=?", "DELETE FROM learning_events WHERE user_id=?", "DELETE FROM profiles WHERE user_id=?", "DELETE FROM knowledge_sources WHERE user_id=?", "DELETE FROM generations WHERE user_id=?", "DELETE FROM users WHERE id=?"]) {
+            try { await env.DB.prepare(sql).bind(uid).run(); } catch { /* ignore */ }
+          }
+          return trpcResult({ success: true, deleted: true }, origin);
+        }
         if (path === "auth.logout") { const token = getBearer(request) || getCookie(request, "app_session_id"); if (token) await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(await sha256(token)).run(); return trpcResult({ success: true }, origin); }
         if (!user) return trpcError("تسجيل الدخول مطلوب", 401, origin);
         if (path === "memory.list") { const rows = await env.DB.prepare("SELECT id, category, content, consent, created_at as createdAt FROM memories WHERE user_id=? ORDER BY created_at DESC LIMIT 100").bind(user.id).all(); return trpcResult(rows.results, origin); }
@@ -1725,6 +1733,28 @@ export default {
     }
 
     if (url.pathname === "/api/auth/me" && request.method === "GET") return json({ user: await currentUser(request, env) }, 200, origin);
+    
+    if (url.pathname === "/api/auth/delete-account" && request.method === "POST") {
+      const user = await currentUser(request, env);
+      if (!user) return json({ error: "تسجيل الدخول مطلوب" }, 401, origin);
+      const uid = user.id;
+      // حذف كامل للحساب والبيانات المرتبطة — لا رجوع
+      for (const sql of [
+        "DELETE FROM sessions WHERE user_id=?",
+        "DELETE FROM messages WHERE user_id=?",
+        "DELETE FROM conversations WHERE user_id=?",
+        "DELETE FROM memories WHERE user_id=?",
+        "DELETE FROM learning_events WHERE user_id=?",
+        "DELETE FROM users WHERE id=?",
+      ]) {
+        try { await env.DB.prepare(sql).bind(uid).run(); } catch { /* table may not exist */ }
+      }
+      return new Response(JSON.stringify({ success: true, deleted: true }), {
+        status: 200,
+        headers: { "content-type": "application/json", "Set-Cookie": cookie("app_session_id", "", 0), ...corsHeaders(origin) as Record<string, string> },
+      });
+    }
+
     if (url.pathname === "/api/auth/logout" && request.method === "POST") { const token = getBearer(request) || getCookie(request, "app_session_id"); if (token) await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(await sha256(token)).run(); return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "content-type": "application/json", "Set-Cookie": cookie("app_session_id", "", 0), ...corsHeaders(origin) } }); }
 
     if (url.pathname === "/api/memory" && request.method === "GET") { const user = await currentUser(request, env); if (!user) return json({ error: "تسجيل الدخول مطلوب" }, 401, origin); const rows = await env.DB.prepare("SELECT id, category, content, consent, created_at as createdAt FROM memories WHERE user_id=? ORDER BY created_at DESC LIMIT 100").bind(user.id).all(); return json(rows.results, 200, origin); }

@@ -15,7 +15,7 @@ type Gender = "male" | "female" | "unspecified";
 
 export default function MemoryScreen() {
   const colors = useColors();
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, user, logout } = useAuth();
   const [memory, setMemory] = useState("");
   const [source, setSource] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -99,7 +99,36 @@ export default function MemoryScreen() {
         <View className="mt-3 gap-2">{memories.data?.length ? memories.data.map((item) => <View key={item.id} className="rounded-2xl border border-border bg-surface p-4"><Text className="text-sm leading-6 text-foreground">{item.content}</Text><Text className="mt-2 text-xs text-muted">{item.category} · موافق عليه</Text></View>) : <Text className="text-sm text-muted">لا توجد ذكريات محفوظة بعد.</Text>}</View>
         <View className="mt-7 rounded-3xl border border-border bg-surface p-4"><Text className="text-base font-bold text-foreground">مصدر سوري عام بإذن واضح</Text><Text className="mt-2 text-xs leading-5 text-muted">أضف رابطًا عامًا تملك حق استخدامه. يمر الرابط بالمراجعة قبل استخدامه.</Text><TextInput value={source} onChangeText={setSource} autoCapitalize="none" keyboardType="url" placeholder="https://..." placeholderTextColor={colors.muted} className="mt-3 rounded-2xl border border-border bg-background px-4 py-3 text-sm text-foreground" /><Pressable onPress={() => submitSource.mutate({ url: source.trim(), permission: true })} className="mt-3 self-start rounded-full bg-foreground px-5 py-3"><Text className="font-bold text-background">إرسال للمراجعة</Text></Pressable></View>
         <Text className="mt-4 text-xs leading-5 text-muted">المصادر المضافة: {sources.data?.length || 0} · لا تدخل المعرفة العامة قبل المراجعة.</Text>
-        <View className="mt-8 rounded-3xl border border-error/30 bg-error/5 p-4"><Text className="text-base font-bold text-error">حذف الحساب والبيانات</Text><Text className="mt-2 text-xs leading-5 text-muted">يحذف ملفك وذكرياتك ومحادثاتك وتوليداتك وملفاتك ومصادرك من مساحة Flsko، ثم ينهي جلستك. لا يمكن التراجع عن هذا الإجراء.</Text><Pressable disabled={deleteAccount.isPending} onPress={() => Alert.alert("تأكيد حذف الحساب", "سيتم حذف كل بياناتك السحابية نهائيًا. هل تريد المتابعة؟", [{ text: "إلغاء", style: "cancel" }, { text: "حذف نهائي", style: "destructive", onPress: () => deleteAccount.mutate() }])} className="mt-4 self-start rounded-full bg-error px-5 py-3"><Text className="font-bold text-background">{deleteAccount.isPending ? "جارٍ الحذف..." : "حذف حسابي نهائيًا"}</Text></Pressable></View>
+        <View className="mt-8 rounded-3xl border border-border bg-surface p-4">
+          <Text className="text-base font-black text-foreground">إعدادات الحساب</Text>
+          <Text className="mt-1 text-xs leading-5 text-muted">
+            تبقى مسجّلًا بعد إغلاق التطبيق. يُطلب الدخول من جديد فقط عند تسجيل الخروج أو حذف التطبيق أو انتهاء الجلسة.
+          </Text>
+          {user?.email ? <Text className="mt-3 text-sm text-foreground">البريد: {user.email}</Text> : null}
+          {user?.name ? <Text className="mt-1 text-sm text-muted">الاسم: {user.name}</Text> : null}
+          <Pressable
+            onPress={() =>
+              Alert.alert(
+                "مغادرة التطبيق (تسجيل الخروج)",
+                "ستخرج من هذا الجهاز فقط. الذاكرة السحابية والمحادثات تبقى محفوظة لحين عودتك بنفس الحساب.",
+                [
+                  { text: "إلغاء", style: "cancel" },
+                  {
+                    text: "تسجيل الخروج",
+                    style: "destructive",
+                    onPress: () => {
+                      void logout();
+                    },
+                  },
+                ],
+              )
+            }
+            className="mt-4 w-full rounded-2xl border border-primary px-4 py-3.5"
+          >
+            <Text className="text-center text-sm font-black text-primary">تسجيل الخروج · الذاكرة تبقى محفوظة</Text>
+          </Pressable>
+        </View>
+        <View className="mt-4 rounded-3xl border border-error/30 bg-error/5 p-4"><Text className="text-base font-bold text-error">حذف الحساب والبيانات</Text><Text className="mt-2 text-xs leading-5 text-muted">يحذف ملفك وذكرياتك ومحادثاتك وتوليداتك وملفاتك ومصادرك من مساحة Flsko، ثم ينهي جلستك. لا يمكن التراجع عن هذا الإجراء.</Text><Pressable disabled={deleteAccount.isPending} onPress={() => Alert.alert("تأكيد حذف الحساب", "سيتم حذف كل بياناتك السحابية نهائيًا. هل تريد المتابعة؟", [{ text: "إلغاء", style: "cancel" }, { text: "حذف نهائي", style: "destructive", onPress: () => deleteAccount.mutate() }])} className="mt-4 self-start rounded-full bg-error px-5 py-3"><Text className="font-bold text-background">{deleteAccount.isPending ? "جارٍ الحذف..." : "حذف حسابي نهائيًا"}</Text></Pressable></View>
       </ScrollView>
     </ScreenContainer>
   );
