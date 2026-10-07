@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { MessageCircle, Sparkles, Clapperboard, Brain, ArrowLeft, Sun, Moon } from "lucide-react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
@@ -21,7 +22,7 @@ function ActionCard({ icon, title, subtitle, tone, onPress }: { icon: keyof type
     <Pressable
       accessibilityRole="button"
       onPress={() => { pressFeedback(); onPress(); }}
-      style={({ pressed }) => [styles.actionCard, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.actionCard, { backgroundColor: colors.surface, borderColor: colors.border, shadowColor: "#0B1220", shadowOpacity: 0.07, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 3 }, pressed && styles.pressed]}
     >
       <View style={[styles.actionIcon, { backgroundColor: `${tone}18` }]}>
         <MaterialIcons name={icon} size={21} color={tone} />
@@ -143,7 +144,7 @@ const styles = StyleSheet.create({
   content: { paddingTop: 8, paddingBottom: 34 },
   topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 22 },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  logo: { width: 42, height: 42, borderRadius: 14 },
+  logo: { width: 42, height: 42, borderRadius: 18 },
   brandName: { fontSize: 17, fontWeight: "900", letterSpacing: 0.2 },
   brandArabic: { marginTop: 1, fontSize: 11, fontWeight: "700" },
   topActions: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -160,7 +161,7 @@ const styles = StyleSheet.create({
   heroGreeting: { color: "rgba(255,255,255,0.68)", fontSize: 14, fontWeight: "700", marginTop: 28 },
   heroTitle: { color: "#FFFFFF", fontSize: 34, lineHeight: 42, fontWeight: "900", marginTop: 4 },
   heroBody: { color: "rgba(255,255,255,0.68)", fontSize: 13, lineHeight: 21, marginTop: 10, maxWidth: 270 },
-  heroButton: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 16, paddingHorizontal: 15, paddingVertical: 12, marginTop: 16 },
+  heroButton: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 20, paddingHorizontal: 15, paddingVertical: 12, marginTop: 16 },
   heroButtonText: { fontSize: 13, fontWeight: "900" },
   sectionHeader: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginTop: 28, marginBottom: 14 },
   sectionTitle: { fontSize: 20, fontWeight: "900" },
@@ -168,8 +169,8 @@ const styles = StyleSheet.create({
   cloudBadge: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 20, paddingHorizontal: 9, paddingVertical: 6 },
   cloudText: { fontSize: 11, fontWeight: "800" },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 11 },
-  actionCard: { width: "48.2%", minHeight: 154, borderWidth: 1, borderRadius: 24, padding: 15, position: "relative" },
-  actionIcon: { width: 40, height: 40, borderRadius: 14, alignItems: "center", justifyContent: "center", marginBottom: 14 },
+  actionCard: { borderRadius: 20, padding: 16, borderWidth: 1, minHeight: 120, gap: 8, flex: 1, minWidth: "46%" },
+  actionIcon: { width: 40, height: 40, borderRadius: 18, alignItems: "center", justifyContent: "center", marginBottom: 14 },
   actionTitle: { fontSize: 14, fontWeight: "900" },
   actionSubtitle: { fontSize: 11, lineHeight: 17, marginTop: 5, paddingRight: 4 },
   actionArrow: { position: "absolute", left: 14, bottom: 14 },
