@@ -5,7 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
-import { ActivityIndicator, Platform, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, Text, TextInput, View } from "react-native";
 import * as Network from "expo-network";
 import "@/lib/_core/nativewind-pressable";
 import { ThemeProvider } from "@/lib/theme-provider";
@@ -20,7 +20,8 @@ import type { EdgeInsets, Metrics, Rect } from "react-native-safe-area-context";
 import { trpc, createTRPCClient } from "@/lib/trpc";
 import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-runtime";
 import { useAuth } from "@/hooks/use-auth";
-import { startOAuthLogin } from "@/constants/oauth";
+import { startOAuthLogin, getApiBaseUrl } from "@/constants/oauth";
+import * as Auth from "@/lib/_core/auth";
 import { ScreenContainer } from "@/components/screen-container";
 import { runStartupUpdateCheck } from "@/lib/app-update";
 
@@ -37,6 +38,10 @@ function AuthGate() {
   const networkState = Network.useNetworkState();
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const isOAuthCallback = segments[0] === "oauth";
   const isPublicPage = segments[0] === "privacy" || segments[0] === "terms" || segments[0] === "download";
   const handleLogin = async () => {
@@ -46,9 +51,77 @@ function AuthGate() {
     setLoginBusy(true);
     try { await startOAuthLogin(); } catch (error) { setLoginBusy(false); setLoginError(error instanceof Error ? error.message : "تعذر فتح تسجيل الدخول."); }
   };
+  const handleEmailAuth = async () => {
+    if (loginBusy) return;
+    setLoginError(null);
+    if (networkState.isInternetReachable === false) {
+      setLoginError("لا يوجد اتصال بالإنترنت.");
+      return;
+    }
+    const em = email.trim();
+    if (!em || password.length < 8) {
+      setLoginError("أدخل بريدًا صالحًا وكلمة مرور من 8 أحرف على الأقل.");
+      return;
+    }
+    setLoginBusy(true);
+    try {
+      const base = (getApiBaseUrl() || "https://flsko-api.flsko.workers.dev").replace(/\/+$/, "");
+      const path = authMode === "register" ? "/api/auth/register" : "/api/auth/login";
+      const res = await fetch(`${base}${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({
+          email: em,
+          password,
+          name: displayName.trim() || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({})) as { sessionToken?: string; error?: string; user?: unknown };
+      if (!res.ok || !data.sessionToken) {
+        throw new Error(data.error || "تعذر إتمام العملية");
+      }
+      await Auth.setSessionToken(data.sessionToken, { notify: true });
+      if (data.user) await Auth.setUserInfo?.(data.user as Auth.User).catch?.(() => undefined);
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : "فشل الدخول بالبريد");
+    } finally {
+      setLoginBusy(false);
+    }
+  };
+
   if (isOAuthCallback) return <Stack screenOptions={{ headerShown: false }}><Stack.Screen name="oauth/callback" /></Stack>;
   if (loading) return <ScreenContainer edges={["top", "bottom", "left", "right"]} className="items-center justify-center px-6"><Text className="text-3xl font-black text-foreground">Flsko</Text><Text className="mt-3 text-center text-muted">جارٍ التحقق من تسجيل الدخول...</Text></ScreenContainer>;
-  if (!isAuthenticated && !isPublicPage) return <ScreenContainer edges={["top", "bottom", "left", "right"]} className="items-center justify-center px-6"><View className="w-full max-w-md items-center rounded-[32px] border border-border bg-surface p-6"><Text className="text-sm font-bold text-primary">Flsko · فلسقوا</Text><Text className="mt-3 text-center text-3xl font-black text-foreground">مرحبًا بك</Text><Text className="mt-3 text-center leading-6 text-muted">سجّل الدخول أولًا للوصول إلى المحادثة وإنشاء الوسائط والذاكرة السحابية.</Text>{loginError && <View className="mt-4 w-full rounded-2xl border border-error bg-error/10 p-3"><Text className="text-center text-sm font-bold text-error">{loginError}</Text></View>}<Pressable onPress={() => void handleLogin()} disabled={loginBusy} style={({ pressed }) => [{ backgroundColor: loginBusy ? "#94A3B8" : "#0A7EA4" }, pressed && { opacity: 0.8 }]} className="mt-6 w-full rounded-2xl px-4 py-4">{loginBusy ? <View className="flex-row items-center justify-center gap-2"><ActivityIndicator color="#FFFFFF" /><Text className="text-center text-base font-black text-white">جارٍ فتح تسجيل الدخول...</Text></View> : <Text className="text-center text-base font-black text-white">{loginError ? "إعادة المحاولة" : "تسجيل الدخول للمتابعة"}</Text>}</Pressable><Text className="mt-4 text-center text-xs leading-5 text-muted">ستظهر نافذة Google داخل التطبيق، ثم تعود تلقائيًا إلى Flsko بعد إتمام الدخول.</Text></View></ScreenContainer>;
+  if (!isAuthenticated && !isPublicPage) return (
+    <ScreenContainer edges={["top", "bottom", "left", "right"]} className="items-center justify-center px-6">
+      <View className="w-full max-w-md items-center rounded-[32px] border border-border bg-surface p-6">
+        <Text className="text-sm font-bold text-primary">Flsko · فلسقوا</Text>
+        <Text className="mt-3 text-center text-3xl font-black text-foreground">مرحبًا بك</Text>
+        <Text className="mt-2 text-center text-sm leading-6 text-muted">سجّل بالبريد أو عبر Google.</Text>
+        <View className="mt-4 w-full flex-row gap-2">
+          <Pressable onPress={() => setAuthMode("login")} className="flex-1 rounded-xl py-2" style={{ backgroundColor: authMode === "login" ? "#0A7EA4" : "transparent", borderWidth: 1, borderColor: "#0A7EA4" }}>
+            <Text className="text-center text-xs font-bold" style={{ color: authMode === "login" ? "#fff" : "#0A7EA4" }}>دخول</Text>
+          </Pressable>
+          <Pressable onPress={() => setAuthMode("register")} className="flex-1 rounded-xl py-2" style={{ backgroundColor: authMode === "register" ? "#0A7EA4" : "transparent", borderWidth: 1, borderColor: "#0A7EA4" }}>
+            <Text className="text-center text-xs font-bold" style={{ color: authMode === "register" ? "#fff" : "#0A7EA4" }}>حساب جديد</Text>
+          </Pressable>
+        </View>
+        {authMode === "register" && (
+          <TextInput value={displayName} onChangeText={setDisplayName} placeholder="الاسم (اختياري)" placeholderTextColor="#94A3B8" className="mt-4 w-full rounded-2xl border border-border bg-background px-4 py-3 text-right text-foreground" />
+        )}
+        <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="البريد الإلكتروني" placeholderTextColor="#94A3B8" className="mt-3 w-full rounded-2xl border border-border bg-background px-4 py-3 text-right text-foreground" />
+        <TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="كلمة المرور (8+)" placeholderTextColor="#94A3B8" className="mt-3 w-full rounded-2xl border border-border bg-background px-4 py-3 text-right text-foreground" />
+        {loginError && <View className="mt-3 w-full rounded-2xl border border-error bg-error/10 p-3"><Text className="text-center text-sm font-bold text-error">{loginError}</Text></View>}
+        <Pressable onPress={() => void handleEmailAuth()} disabled={loginBusy} className="mt-4 w-full rounded-2xl bg-primary px-4 py-4">
+          <Text className="text-center text-base font-black text-white">{loginBusy ? "جارٍ..." : authMode === "register" ? "إنشاء حساب" : "دخول بالبريد"}</Text>
+        </Pressable>
+        <View className="my-4 h-px w-full bg-border" />
+        <Pressable onPress={() => void handleLogin()} disabled={loginBusy} className="w-full rounded-2xl border border-primary px-4 py-4">
+          <Text className="text-center text-base font-black text-primary">المتابعة مع Google</Text>
+        </Pressable>
+        <Text className="mt-3 text-center text-xs leading-5 text-muted">Google خيار مستقل. كلمة المرور تُشفَّر ولا تُخزَّن بشكل صريح.</Text>
+      </View>
+    </ScreenContainer>
+  );
   return <Stack screenOptions={{ headerShown: false }}><Stack.Screen name="(tabs)" /><Stack.Screen name="privacy" /><Stack.Screen name="terms" /><Stack.Screen name="suggestions" /><Stack.Screen name="download" /><Stack.Screen name="development" /><Stack.Screen name="admin-suggestions" /></Stack>;
 }
 

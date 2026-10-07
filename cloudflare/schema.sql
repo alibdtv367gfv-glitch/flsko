@@ -5,9 +5,14 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT,
   picture TEXT,
   role TEXT NOT NULL DEFAULT 'user',
+  password_hash TEXT,
+  password_salt TEXT,
+  login_method TEXT DEFAULT 'google',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_signed_in TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users(email) WHERE email IS NOT NULL AND email != '';
+
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL,

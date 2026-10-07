@@ -277,6 +277,85 @@ function cookie(name: string, value: string, maxAge: number) { return `${name}=$
 function getBearer(request: Request) { return request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "") || null; }
 function getCookie(request: Request, name: string) { return request.headers.get("Cookie")?.split(";").map((x) => x.trim()).find((x) => x.startsWith(`${name}=`))?.slice(name.length + 1) || null; }
 async function sha256(value: string) { const digest = await crypto.subtle.digest("SHA-256", encoder.encode(value)); return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join(""); }
+
+/** PBKDF2-SHA256 password hashing (Workers Web Crypto). */
+async function hashPasswordPbkdf2(password: string, saltB64?: string): Promise<{ hash: string; salt: string }> {
+  const salt = saltB64
+    ? Uint8Array.from(atob(saltB64), (c) => c.charCodeAt(0))
+    : crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: 100_000, hash: "SHA-256" }, keyMaterial, 256);
+  const hash = btoa(String.fromCharCode(...new Uint8Array(bits)));
+  const saltOut = saltB64 || btoa(String.fromCharCode(...salt));
+  return { hash, salt: saltOut };
+}
+
+async function verifyPassword(password: string, hash: string, salt: string): Promise<boolean> {
+  const derived = await hashPasswordPbkdf2(password, salt);
+  if (derived.hash.length !== hash.length) return false;
+  let ok = 0;
+  for (let i = 0; i < hash.length; i++) ok |= derived.hash.charCodeAt(i) ^ hash.charCodeAt(i);
+  return ok === 0;
+}
+
+async function ensureEmailAuthColumns(env: Env) {
+  for (const sql of [
+    "ALTER TABLE users ADD COLUMN password_hash TEXT",
+    "ALTER TABLE users ADD COLUMN password_salt TEXT",
+    "ALTER TABLE users ADD COLUMN login_method TEXT DEFAULT 'google'",
+  ]) {
+    try { await env.DB.prepare(sql).run(); } catch { /* exists */ }
+  }
+}
+
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 160;
+}
+
+async function issueSession(env: Env, userId: number, origin: string | null) {
+  const token = randomToken();
+  await env.DB.prepare("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)").bind(await sha256(token), userId, Date.now() + 365 * 24 * 60 * 60 * 1000).run();
+  const user = await env.DB.prepare("SELECT id, open_id as openId, name, email, picture, role, last_signed_in as lastSignedIn, login_method as loginMethod FROM users WHERE id=?").bind(userId).first();
+  const headers = new Headers({ "content-type": "application/json; charset=utf-8", ...corsHeaders(origin) as Record<string, string> });
+  headers.append("Set-Cookie", cookie("app_session_id", token, 365 * 24 * 60 * 60));
+  return new Response(JSON.stringify({ sessionToken: token, user }), { status: 200, headers });
+}
+
+async function registerWithEmail(env: Env, email: string, password: string, name?: string) {
+  await ensureEmailAuthColumns(env);
+  const normalized = email.trim().toLowerCase();
+  if (!isValidEmail(normalized)) throw new Error("البريد غير صالح");
+  if (password.length < 8 || password.length > 128) throw new Error("كلمة المرور من 8 إلى 128 حرفًا");
+  const existing = await env.DB.prepare("SELECT id, password_hash FROM users WHERE lower(email)=?").bind(normalized).first<{ id: number; password_hash: string | null }>();
+  if (existing?.password_hash) throw new Error("هذا البريد مسجّل مسبقًا — جرّب تسجيل الدخول");
+  const { hash, salt } = await hashPasswordPbkdf2(password);
+  const openId = `email:${normalized}`;
+  const display = (name || normalized.split("@")[0] || "مستخدم").slice(0, 80);
+  if (existing) {
+    await env.DB.prepare("UPDATE users SET password_hash=?, password_salt=?, login_method=?, name=?, last_signed_in=? WHERE id=?").bind(hash, salt, "email", display, new Date().toISOString(), existing.id).run();
+    return existing.id;
+  }
+  await env.DB.prepare(
+    "INSERT INTO users(open_id,name,email,password_hash,password_salt,login_method,last_signed_in) VALUES(?,?,?,?,?,?,?)"
+  ).bind(openId, display, normalized, hash, salt, "email", new Date().toISOString()).run();
+  const row = await env.DB.prepare("SELECT id FROM users WHERE open_id=?").bind(openId).first<{ id: number }>();
+  if (!row) throw new Error("تعذر إنشاء الحساب");
+  return row.id;
+}
+
+async function loginWithEmail(env: Env, email: string, password: string) {
+  await ensureEmailAuthColumns(env);
+  const normalized = email.trim().toLowerCase();
+  if (!isValidEmail(normalized)) throw new Error("البريد غير صالح");
+  const row = await env.DB.prepare("SELECT id, password_hash, password_salt FROM users WHERE lower(email)=?").bind(normalized).first<{ id: number; password_hash: string | null; password_salt: string | null }>();
+  if (!row?.password_hash || !row.password_salt) throw new Error("بيانات الدخول غير صحيحة");
+  const ok = await verifyPassword(password, row.password_hash, row.password_salt);
+  if (!ok) throw new Error("بيانات الدخول غير صحيحة");
+  await env.DB.prepare("UPDATE users SET last_signed_in=? WHERE id=?").bind(new Date().toISOString(), row.id).run();
+  return row.id;
+}
+
+
 function randomToken() { return `${crypto.randomUUID()}${crypto.randomUUID().replaceAll("-", "")}`; }
 function validReturnTo(value: string, platform: string) { if (platform === "native") return value.startsWith("manus"); try { const url = new URL(value); return url.protocol === "https:" || url.hostname === "localhost"; } catch { return false; } }
 async function currentUser(request: Request, env: Env) {
@@ -1346,6 +1425,35 @@ export default {
           return trpcResult(payload, origin);
         }
         if (path === "auth.me") return trpcResult(user, origin);
+                if (path === "auth.register") {
+          const value = input || {};
+          const email = typeof value.email === "string" ? value.email : "";
+          const password = typeof value.password === "string" ? value.password : "";
+          const name = typeof value.name === "string" ? value.name : undefined;
+          try {
+            const userId = await registerWithEmail(env, email, password, name);
+            const token = randomToken();
+            await env.DB.prepare("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)").bind(await sha256(token), userId, Date.now() + 365 * 24 * 60 * 60 * 1000).run();
+            const user = await env.DB.prepare("SELECT id, open_id as openId, name, email, picture, role, last_signed_in as lastSignedIn, login_method as loginMethod FROM users WHERE id=?").bind(userId).first();
+            return trpcResult({ sessionToken: token, user }, origin);
+          } catch (e) {
+            return trpcError(e instanceof Error ? e.message : "فشل التسجيل", 400, origin);
+          }
+        }
+        if (path === "auth.login") {
+          const value = input || {};
+          const email = typeof value.email === "string" ? value.email : "";
+          const password = typeof value.password === "string" ? value.password : "";
+          try {
+            const userId = await loginWithEmail(env, email, password);
+            const token = randomToken();
+            await env.DB.prepare("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)").bind(await sha256(token), userId, Date.now() + 365 * 24 * 60 * 60 * 1000).run();
+            const user = await env.DB.prepare("SELECT id, open_id as openId, name, email, picture, role, last_signed_in as lastSignedIn, login_method as loginMethod FROM users WHERE id=?").bind(userId).first();
+            return trpcResult({ sessionToken: token, user }, origin);
+          } catch (e) {
+            return trpcError(e instanceof Error ? e.message : "فشل الدخول", 401, origin);
+          }
+        }
         if (path === "auth.logout") { const token = getBearer(request) || getCookie(request, "app_session_id"); if (token) await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(await sha256(token)).run(); return trpcResult({ success: true }, origin); }
         if (!user) return trpcError("تسجيل الدخول مطلوب", 401, origin);
         if (path === "memory.list") { const rows = await env.DB.prepare("SELECT id, category, content, consent, created_at as createdAt FROM memories WHERE user_id=? ORDER BY created_at DESC LIMIT 100").bind(user.id).all(); return trpcResult(rows.results, origin); }
@@ -1422,6 +1530,26 @@ export default {
         }
         return trpcError("المسار غير مدعوم بعد على Cloudflare", 404, origin);
       } catch (error) { return trpcError(error instanceof Error ? error.message : "تعذر تنفيذ الطلب", 500, origin); }
+    }
+
+    
+    if (url.pathname === "/api/auth/register" && request.method === "POST") {
+      const body = await request.json().catch(() => ({})) as { email?: string; password?: string; name?: string };
+      try {
+        const userId = await registerWithEmail(env, body.email || "", body.password || "", body.name);
+        return issueSession(env, userId, origin);
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : "فشل التسجيل" }, 400, origin);
+      }
+    }
+    if (url.pathname === "/api/auth/login" && request.method === "POST") {
+      const body = await request.json().catch(() => ({})) as { email?: string; password?: string };
+      try {
+        const userId = await loginWithEmail(env, body.email || "", body.password || "");
+        return issueSession(env, userId, origin);
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : "فشل الدخول" }, 401, origin);
+      }
     }
 
     if (url.pathname === "/api/google/start" && request.method === "GET") {
