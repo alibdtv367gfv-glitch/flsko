@@ -38,10 +38,13 @@ function AuthGate() {
   const networkState = Network.useNetworkState();
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authMode, setAuthMode] = useState<"login" | "register" | "forgot" | "reset">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [resetInfo, setResetInfo] = useState<string | null>(null);
   const isOAuthCallback = segments[0] === "oauth";
   const isPublicPage = segments[0] === "privacy" || segments[0] === "terms" || segments[0] === "download";
   const handleLogin = async () => {
@@ -51,6 +54,59 @@ function AuthGate() {
     setLoginBusy(true);
     try { await startOAuthLogin(); } catch (error) { setLoginBusy(false); setLoginError(error instanceof Error ? error.message : "تعذر فتح تسجيل الدخول."); }
   };
+
+  const handleForgotPassword = async () => {
+    if (loginBusy) return;
+    setLoginError(null);
+    setResetInfo(null);
+    const em = email.trim();
+    if (!em) { setLoginError("أدخل بريدك أولاً"); return; }
+    setLoginBusy(true);
+    try {
+      const base = (getApiBaseUrl() || "https://flsko-api.flsko.workers.dev").replace(/\/+$/, "");
+      const res = await fetch(`${base}/api/auth/forgot-password`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: em }),
+      });
+      const data = await res.json().catch(() => ({})) as { message?: string; error?: string; debugCode?: string };
+      if (!res.ok) throw new Error(data.error || "تعذر إرسال الرمز");
+      let msg = data.message || "تحقق من بريدك";
+      if (data.debugCode) msg += ` · رمز تجريبي: ${data.debugCode}`;
+      setResetInfo(msg);
+      setAuthMode("reset");
+    } catch (e) {
+      setLoginError(e instanceof Error ? e.message : "فشل الطلب");
+    } finally {
+      setLoginBusy(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (loginBusy) return;
+    setLoginError(null);
+    setLoginBusy(true);
+    try {
+      const base = (getApiBaseUrl() || "https://flsko-api.flsko.workers.dev").replace(/\/+$/, "");
+      const res = await fetch(`${base}/api/auth/reset-password`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), code: resetCode.trim(), newPassword }),
+      });
+      const data = await res.json().catch(() => ({})) as { message?: string; error?: string };
+      if (!res.ok) throw new Error(data.error || "تعذر التعيين");
+      setResetInfo(data.message || "تم التحديث");
+      setPassword(newPassword);
+      setAuthMode("login");
+      setResetCode("");
+      setNewPassword("");
+    } catch (e) {
+      setLoginError(e instanceof Error ? e.message : "فشل التعيين");
+    } finally {
+      setLoginBusy(false);
+    }
+  };
+
   const handleEmailAuth = async () => {
     if (loginBusy) return;
     setLoginError(null);
@@ -98,10 +154,10 @@ function AuthGate() {
         <Text className="mt-3 text-center text-3xl font-black text-foreground">مرحبًا بك</Text>
         <Text className="mt-2 text-center text-sm leading-6 text-muted">سجّل بالبريد أو عبر Google.</Text>
         <View className="mt-4 w-full flex-row gap-2">
-          <Pressable onPress={() => setAuthMode("login")} className="flex-1 rounded-xl py-2" style={{ backgroundColor: authMode === "login" ? "#0A7EA4" : "transparent", borderWidth: 1, borderColor: "#0A7EA4" }}>
+          <Pressable onPress={() => { setAuthMode("login"); setLoginError(null); }} className="flex-1 rounded-xl py-2" style={{ backgroundColor: authMode === "login" ? "#0A7EA4" : "transparent", borderWidth: 1, borderColor: "#0A7EA4" }}>
             <Text className="text-center text-xs font-bold" style={{ color: authMode === "login" ? "#fff" : "#0A7EA4" }}>دخول</Text>
           </Pressable>
-          <Pressable onPress={() => setAuthMode("register")} className="flex-1 rounded-xl py-2" style={{ backgroundColor: authMode === "register" ? "#0A7EA4" : "transparent", borderWidth: 1, borderColor: "#0A7EA4" }}>
+          <Pressable onPress={() => { setAuthMode("register"); setLoginError(null); }} className="flex-1 rounded-xl py-2" style={{ backgroundColor: authMode === "register" ? "#0A7EA4" : "transparent", borderWidth: 1, borderColor: "#0A7EA4" }}>
             <Text className="text-center text-xs font-bold" style={{ color: authMode === "register" ? "#fff" : "#0A7EA4" }}>حساب جديد</Text>
           </Pressable>
         </View>
@@ -109,11 +165,42 @@ function AuthGate() {
           <TextInput value={displayName} onChangeText={setDisplayName} placeholder="الاسم (اختياري)" placeholderTextColor="#94A3B8" className="mt-4 w-full rounded-2xl border border-border bg-background px-4 py-3 text-right text-foreground" />
         )}
         <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="البريد الإلكتروني" placeholderTextColor="#94A3B8" className="mt-3 w-full rounded-2xl border border-border bg-background px-4 py-3 text-right text-foreground" />
-        <TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="كلمة المرور (8+)" placeholderTextColor="#94A3B8" className="mt-3 w-full rounded-2xl border border-border bg-background px-4 py-3 text-right text-foreground" />
+        {(authMode === "login" || authMode === "register") && (
+          <TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="كلمة المرور (8+)" placeholderTextColor="#94A3B8" className="mt-3 w-full rounded-2xl border border-border bg-background px-4 py-3 text-right text-foreground" />
+        )}
+        {authMode === "reset" && (
+          <>
+            <TextInput value={resetCode} onChangeText={setResetCode} keyboardType="number-pad" maxLength={6} placeholder="رمز التحقق (6 أرقام)" placeholderTextColor="#94A3B8" className="mt-3 w-full rounded-2xl border border-border bg-background px-4 py-3 text-center text-lg tracking-widest text-foreground" />
+            <TextInput value={newPassword} onChangeText={setNewPassword} secureTextEntry placeholder="كلمة المرور الجديدة (8+)" placeholderTextColor="#94A3B8" className="mt-3 w-full rounded-2xl border border-border bg-background px-4 py-3 text-right text-foreground" />
+          </>
+        )}
+        {resetInfo && <View className="mt-3 w-full rounded-2xl border border-primary/30 bg-primary/10 p-3"><Text className="text-center text-sm text-primary">{resetInfo}</Text></View>}
         {loginError && <View className="mt-3 w-full rounded-2xl border border-error bg-error/10 p-3"><Text className="text-center text-sm font-bold text-error">{loginError}</Text></View>}
-        <Pressable onPress={() => void handleEmailAuth()} disabled={loginBusy} className="mt-4 w-full rounded-2xl bg-primary px-4 py-4">
-          <Text className="text-center text-base font-black text-white">{loginBusy ? "جارٍ..." : authMode === "register" ? "إنشاء حساب" : "دخول بالبريد"}</Text>
-        </Pressable>
+        {(authMode === "login" || authMode === "register") && (
+          <Pressable onPress={() => void handleEmailAuth()} disabled={loginBusy} className="mt-4 w-full rounded-2xl bg-primary px-4 py-4">
+            <Text className="text-center text-base font-black text-white">{loginBusy ? "جارٍ..." : authMode === "register" ? "إنشاء حساب" : "دخول بالبريد"}</Text>
+          </Pressable>
+        )}
+        {authMode === "login" && (
+          <Pressable onPress={() => { setAuthMode("forgot"); setLoginError(null); setResetInfo(null); }} className="mt-3">
+            <Text className="text-center text-xs font-bold text-primary">نسيت كلمة المرور؟</Text>
+          </Pressable>
+        )}
+        {authMode === "forgot" && (
+          <Pressable onPress={() => void handleForgotPassword()} disabled={loginBusy} className="mt-4 w-full rounded-2xl bg-primary px-4 py-4">
+            <Text className="text-center text-base font-black text-white">{loginBusy ? "جارٍ الإرسال..." : "إرسال رمز التحقق للبريد"}</Text>
+          </Pressable>
+        )}
+        {authMode === "reset" && (
+          <Pressable onPress={() => void handleResetPassword()} disabled={loginBusy} className="mt-4 w-full rounded-2xl bg-primary px-4 py-4">
+            <Text className="text-center text-base font-black text-white">{loginBusy ? "جارٍ..." : "تعيين كلمة المرور الجديدة"}</Text>
+          </Pressable>
+        )}
+        {(authMode === "forgot" || authMode === "reset") && (
+          <Pressable onPress={() => setAuthMode("login")} className="mt-3">
+            <Text className="text-center text-xs text-muted">العودة لتسجيل الدخول</Text>
+          </Pressable>
+        )}
         <View className="my-4 h-px w-full bg-border" />
         <Pressable onPress={() => void handleLogin()} disabled={loginBusy} className="w-full rounded-2xl border border-primary px-4 py-4">
           <Text className="text-center text-base font-black text-primary">المتابعة مع Google</Text>

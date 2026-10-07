@@ -356,6 +356,124 @@ async function loginWithEmail(env: Env, email: string, password: string) {
 }
 
 
+
+async function ensureResetTable(env: Env) {
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  )`).run();
+}
+
+function generateResetCode(): string {
+  const n = crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000;
+  return String(n).padStart(6, "0");
+}
+
+async function sendResetEmail(env: Env, to: string, code: string): Promise<{ sent: boolean; via: string }> {
+  const from = env.FLSKO_MAIL_FROM || "Flsko <onboarding@resend.dev>";
+  const subject = "رمز استعادة كلمة مرور فلسقوا";
+  const text = `رمز التحقق الخاص بك: ${code}\nصالح لمدة 15 دقيقة.\nإذا لم تطلب الاستعادة فتجاهل الرسالة.\n— فلسقوا`;
+  const html = `<div dir="rtl" style="font-family:sans-serif;line-height:1.8"><p>رمز التحقق لاستعادة كلمة المرور:</p><p style="font-size:28px;font-weight:800;letter-spacing:4px">${code}</p><p>صالح لمدة 15 دقيقة.</p><p style="color:#64748b">إذا لم تطلب ذلك فتجاهل الرسالة.</p><p>— فلسقوا</p></div>`;
+
+  // 1) Resend
+  const resendKey = env.RESEND_API_KEY || env.FLSKO_RESEND_API_KEY;
+  if (resendKey) {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { authorization: `Bearer ${resendKey}`, "content-type": "application/json" },
+      body: JSON.stringify({ from, to: [to], subject, html, text }),
+    });
+    if (res.ok) return { sent: true, via: "resend" };
+    console.log("resend failed", res.status, await res.text().catch(() => ""));
+  }
+
+  // 2) Generic webhook (Zapier / Make / Apps Script / n8n)
+  if (env.FLSKO_EMAIL_HOOK_URL) {
+    const res = await fetch(env.FLSKO_EMAIL_HOOK_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(env.FLSKO_EMAIL_HOOK_SECRET ? { "x-flsko-secret": env.FLSKO_EMAIL_HOOK_SECRET } : {}) },
+      body: JSON.stringify({ type: "password_reset", to, subject, text, html, code }),
+    });
+    if (res.ok) return { sent: true, via: "hook" };
+  }
+
+  return { sent: false, via: "none" };
+}
+
+async function requestPasswordReset(env: Env, email: string): Promise<{ ok: true; message: string; debugCode?: string }> {
+  await ensureEmailAuthColumns(env);
+  await ensureResetTable(env);
+  const normalized = email.trim().toLowerCase();
+  if (!isValidEmail(normalized)) throw new Error("البريد غير صالح");
+
+  // Always same outward behavior for unknown emails (anti-enumeration)
+  const user = await env.DB.prepare(
+    "SELECT id FROM users WHERE lower(email)=? AND password_hash IS NOT NULL AND password_hash != ''"
+  ).bind(normalized).first<{ id: number }>();
+
+  const generic = "إن وُجد حساب بهذا البريد فسنرسل رمز تحقق صالحًا لمدة 15 دقيقة.";
+
+  if (!user) return { ok: true, message: generic };
+
+  // rate limit: max 3 active tokens / 15 min
+  const recent = await env.DB.prepare(
+    "SELECT COUNT(*) as c FROM password_reset_tokens WHERE email=? AND created_at > ?"
+  ).bind(normalized, Date.now() - 15 * 60 * 1000).first<{ c: number }>();
+  if ((recent?.c || 0) >= 3) throw new Error("محاولات كثيرة — انتظر ربع ساعة ثم أعد المحاولة");
+
+  const code = generateResetCode();
+  const codeHash = await sha256(code);
+  const now = Date.now();
+  await env.DB.prepare(
+    "INSERT INTO password_reset_tokens(email, code_hash, expires_at, used, created_at) VALUES(?,?,?,0,?)"
+  ).bind(normalized, codeHash, now + 15 * 60 * 1000, now).run();
+
+  const mail = await sendResetEmail(env, normalized, code);
+  const out: { ok: true; message: string; debugCode?: string } = {
+    ok: true,
+    message: mail.sent
+      ? "أرسلنا رمز التحقق إلى بريدك. أدخله مع كلمة المرور الجديدة."
+      : generic + " (تعذر إرسال البريد تلقائيًا — اضبط RESEND_API_KEY أو FLSKO_EMAIL_HOOK_URL في Cloudflare).",
+  };
+  // Only expose code when explicitly enabled for staging
+  if (env.FLSKO_RESET_DEBUG === "1" && !mail.sent) out.debugCode = code;
+  return out;
+}
+
+async function resetPasswordWithCode(env: Env, email: string, code: string, newPassword: string) {
+  await ensureEmailAuthColumns(env);
+  await ensureResetTable(env);
+  const normalized = email.trim().toLowerCase();
+  if (!isValidEmail(normalized)) throw new Error("البريد غير صالح");
+  if (!/^\d{6}$/.test(code.trim())) throw new Error("رمز التحقق يجب أن يكون 6 أرقام");
+  if (newPassword.length < 8 || newPassword.length > 128) throw new Error("كلمة المرور من 8 إلى 128 حرفًا");
+
+  const codeHash = await sha256(code.trim());
+  const row = await env.DB.prepare(
+    "SELECT id FROM password_reset_tokens WHERE email=? AND code_hash=? AND used=0 AND expires_at>? ORDER BY id DESC LIMIT 1"
+  ).bind(normalized, codeHash, Date.now()).first<{ id: number }>();
+  if (!row) throw new Error("رمز غير صالح أو منتهٍ — اطلب رمزًا جديدًا");
+
+  const user = await env.DB.prepare(
+    "SELECT id FROM users WHERE lower(email)=? AND password_hash IS NOT NULL"
+  ).bind(normalized).first<{ id: number }>();
+  if (!user) throw new Error("الحساب غير موجود");
+
+  const { hash, salt } = await hashPasswordPbkdf2(newPassword);
+  await env.DB.prepare(
+    "UPDATE users SET password_hash=?, password_salt=?, login_method=?, last_signed_in=? WHERE id=?"
+  ).bind(hash, salt, "email", new Date().toISOString(), user.id).run();
+  await env.DB.prepare("UPDATE password_reset_tokens SET used=1 WHERE id=?").bind(row.id).run();
+  // invalidate other sessions optional: delete sessions for user
+  await env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(user.id).run();
+  return { ok: true, message: "تم تحديث كلمة المرور. سجّل الدخول الآن." };
+}
+
+
 function randomToken() { return `${crypto.randomUUID()}${crypto.randomUUID().replaceAll("-", "")}`; }
 function validReturnTo(value: string, platform: string) { if (platform === "native") return value.startsWith("manus"); try { const url = new URL(value); return url.protocol === "https:" || url.hostname === "localhost"; } catch { return false; } }
 async function currentUser(request: Request, env: Env) {
@@ -1542,6 +1660,26 @@ export default {
         return json({ error: e instanceof Error ? e.message : "فشل التسجيل" }, 400, origin);
       }
     }
+    
+    if (url.pathname === "/api/auth/forgot-password" && request.method === "POST") {
+      const body = await request.json().catch(() => ({})) as { email?: string };
+      try {
+        const result = await requestPasswordReset(env, body.email || "");
+        return json(result, 200, origin);
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : "تعذر الطلب" }, 400, origin);
+      }
+    }
+    if (url.pathname === "/api/auth/reset-password" && request.method === "POST") {
+      const body = await request.json().catch(() => ({})) as { email?: string; code?: string; newPassword?: string };
+      try {
+        const result = await resetPasswordWithCode(env, body.email || "", body.code || "", body.newPassword || "");
+        return json(result, 200, origin);
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : "تعذر التعيين" }, 400, origin);
+      }
+    }
+
     if (url.pathname === "/api/auth/login" && request.method === "POST") {
       const body = await request.json().catch(() => ({})) as { email?: string; password?: string };
       try {

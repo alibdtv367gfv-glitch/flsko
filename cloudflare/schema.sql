@@ -88,3 +88,13 @@ CREATE INDEX IF NOT EXISTS messages_user_idx ON messages(user_id);
 CREATE INDEX IF NOT EXISTS messages_conv_idx ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS conversations_user_idx ON conversations(user_id, updated_at);
 CREATE INDEX IF NOT EXISTS provider_events_provider_idx ON provider_events(provider_id, created_at);
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL,
+  code_hash TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS password_reset_email_idx ON password_reset_tokens(email, expires_at);
