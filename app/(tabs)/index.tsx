@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -16,22 +16,17 @@ function pressFeedback() {
   if (Platform.OS !== "web") void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 }
 
-function ActionCard({ icon, title, subtitle, tone, onPress }: { icon: keyof typeof MaterialIcons.glyphMap; title: string; subtitle: string; tone: string; onPress: () => void }) {
+function ActionCard({ icon, title, subtitle, tone, onPress }: { icon: ReactNode; title: string; subtitle: string; tone: string; onPress: () => void }) {
   const colors = useColors();
   return (
     <Pressable
       accessibilityRole="button"
       onPress={() => { pressFeedback(); onPress(); }}
-      style={({ pressed }) => [styles.actionCard, { backgroundColor: colors.surface, borderColor: colors.border, shadowColor: "#0B1220", shadowOpacity: 0.07, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 3 }, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.actionCard, { backgroundColor: colors.surface, borderColor: colors.border, shadowColor: "#0B1220", shadowOpacity: 0.08, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 3 }, pressed && styles.pressed]}
     >
-      <View style={[styles.actionIcon, { backgroundColor: `${tone}18` }]}>
-        <MaterialIcons name={icon} size={21} color={tone} />
-      </View>
+      <View style={[styles.actionIcon, { backgroundColor: `${tone}18` }]}>{icon}</View>
       <Text style={[styles.actionTitle, { color: colors.foreground }]}>{title}</Text>
       <Text style={[styles.actionSubtitle, { color: colors.muted }]}>{subtitle}</Text>
-      <View style={styles.actionArrow}>
-        <MaterialIcons name="arrow-forward" size={16} color={colors.primary} />
-      </View>
     </Pressable>
   );
 }
@@ -109,10 +104,10 @@ export default function HomeScreen() {
 
         {isAuthenticated ? (
           <View style={styles.grid}>
-            <ActionCard icon="chat-bubble-outline" title="احكِ مع فلسقوا" subtitle="محادثة تفهم لهجتك" tone={colors.primary} onPress={() => router.push("/chat")} />
-            <ActionCard icon="auto-awesome" title="اصنع صورة" subtitle="فكرة إلى مشهد بصري" tone={colors.warning} onPress={() => router.push("/create")} />
-            <ActionCard icon="movie-creation" title="اصنع فيديو" subtitle="لقطة قصيرة من وصفك" tone={colors.success} onPress={() => router.push("/create?kind=video")} />
-            <ActionCard icon="psychology" title="ذاكرتي" subtitle="ما اخترت أن يتذكّره" tone={colors.primary} onPress={() => router.push("/memory")} />
+            <ActionCard icon={<MessageCircle size={22} color={colors.primary} />} title="احكِ مع فلسقوا" subtitle="محادثة تفهم لهجتك" tone={colors.primary} onPress={() => router.push("/chat")} />
+            <ActionCard icon={<Sparkles size={22} color={colors.warning} />} title="اصنع صورة" subtitle="فكرة إلى مشهد بصري" tone={colors.warning} onPress={() => router.push("/create")} />
+            <ActionCard icon={<Clapperboard size={22} color={colors.success} />} title="اصنع فيديو" subtitle="لقطة قصيرة من وصفك" tone={colors.success} onPress={() => router.push("/create?kind=video")} />
+            <ActionCard icon={<Brain size={22} color={colors.primary} />} title="ذاكرتي" subtitle="ما اخترت أن يتذكّره" tone={colors.primary} onPress={() => router.push("/memory")} />
           </View>
         ) : (
           <View style={[styles.guestCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>

@@ -15,6 +15,7 @@ import {
 import * as Speech from "expo-speech";
 import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
 import * as FileSystem from "expo-file-system/legacy";
+import { Send, Mic, Menu, Settings2, Plus } from "lucide-react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { AgentProcessing } from "@/components/agent-processing";
@@ -403,17 +404,26 @@ export default function ChatScreen() {
               className="mb-1 h-12 min-w-[48px] items-center justify-center rounded-2xl border border-border px-2"
               style={{ backgroundColor: recorderState.isRecording ? colors.error : colors.background }}
             >
-              <Text className="text-xs font-bold" style={{ color: recorderState.isRecording ? colors.background : colors.primary }}>
-                {voiceTurnMutation.isPending ? "…" : recorderState.isRecording ? "⏹" : "🎙"}
-              </Text>
+              {voiceTurnMutation.isPending ? (
+                <ActivityIndicator color={colors.primary} />
+              ) : (
+                <Mic size={20} color={recorderState.isRecording ? colors.background : colors.primary} />
+              )}
             </Pressable>
             <Pressable
               onPress={send}
               disabled={busy || !draft.trim()}
-              className="mb-1 h-12 min-w-[56px] items-center justify-center rounded-2xl px-3"
-              style={{ backgroundColor: busy || !draft.trim() ? colors.border : colors.primary }}
+              className="mb-1 h-12 min-w-[52px] items-center justify-center rounded-2xl px-3"
+              style={{
+                backgroundColor: busy || !draft.trim() ? colors.border : colors.primary,
+                shadowColor: colors.primary,
+                shadowOpacity: busy || !draft.trim() ? 0 : 0.25,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 4 },
+                elevation: busy || !draft.trim() ? 0 : 3,
+              }}
             >
-              {busy ? <ActivityIndicator color={colors.background} /> : <Text className="text-sm font-black" style={{ color: colors.background }}>إرسال</Text>}
+              {busy ? <ActivityIndicator color={colors.background} /> : <Send size={18} color={colors.background} />}
             </Pressable>
           </View>
         </View>
