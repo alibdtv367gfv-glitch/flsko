@@ -70,35 +70,35 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "الرئيسية",
-          tabBarIcon: ({ color, focused }) => <TabIcon Icon={Home} color={color} focused={focused} />,
+          tabBarIcon: ({ color, focused }) => <TabIcon Icon={Home} color={String(color)} focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="create"
         options={{
           title: "إنشاء",
-          tabBarIcon: ({ color, focused }) => <TabIcon Icon={Sparkles} color={color} focused={focused} />,
+          tabBarIcon: ({ color, focused }) => <TabIcon Icon={Sparkles} color={String(color)} focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="library"
         options={{
           title: "مكتبتي",
-          tabBarIcon: ({ color, focused }) => <TabIcon Icon={FolderOpen} color={color} focused={focused} />,
+          tabBarIcon: ({ color, focused }) => <TabIcon Icon={FolderOpen} color={String(color)} focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="chat"
         options={{
           title: "حوار",
-          tabBarIcon: ({ color, focused }) => <TabIcon Icon={MessageCircle} color={color} focused={focused} />,
+          tabBarIcon: ({ color, focused }) => <TabIcon Icon={MessageCircle} color={String(color)} focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="memory"
         options={{
           title: "حسابي",
-          tabBarIcon: ({ color, focused }) => <TabIcon Icon={Brain} color={color} focused={focused} />,
+          tabBarIcon: ({ color, focused }) => <TabIcon Icon={Brain} color={String(color)} focused={focused} />,
         }}
       />
     </Tabs>

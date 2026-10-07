@@ -436,13 +436,13 @@ function AuthGate() {
         <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "center", padding: 22 }}>
           <View className="w-full max-w-md self-center rounded-[28px] border border-border bg-surface p-6">
             <Text className="text-center text-xs font-bold text-primary">Flsko · فلسقوا</Text>
-            <Text className="mt-3 text-center text-2xl font-black text-foreground">نسخة 1.0 تجريبية</Text>
+            <Text className="mt-3 text-center text-2xl font-black text-foreground">نسخة 1.0 · تجريبية</Text>
             <Text className="mt-4 text-right text-sm leading-7 text-muted">
-              مرحبًا بك في النسخة الأولى من فلسقوا.
+              مرحبًا بك في النسخة الأولى العامة من فلسقوا.
               {"\n\n"}
-              هذه نسخة تجريبية: قد تظهر تحسينات وأخطاء بسيطة أثناء التطوير.
+              التطبيق متاح للجميع للتجربة. بعض الميزات (مثل الوسائط والبريد) ما زالت قيد التحسين.
               {"\n\n"}
-              حسابك وذاكرتك محفوظان في السحابة. التحديثات المستقبلية يمكن أن تصل داخل التطبيق دون حذف بياناتك.
+              حسابك وذاكرتك محفوظان في السحابة. يمكن تحديث التطبيق لاحقًا دون فقدان بياناتك.
             </Text>
             <Pressable
               onPress={async () => {

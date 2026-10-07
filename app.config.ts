@@ -49,7 +49,7 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    buildNumber: "4",
+    buildNumber: "5",
     "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -63,7 +63,7 @@ const config: ExpoConfig = {
     },
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    versionCode: 4,
+    versionCode: 5,
     permissions: [
       "POST_NOTIFICATIONS",
       "RECORD_AUDIO",

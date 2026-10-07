@@ -226,14 +226,13 @@ export default function CreateScreen() {
     }
     setResult(null);
     if (kind === "music") musicMutation.mutate({ prompt: prompt.trim() });
-    else
+    else if (kind === "image" || kind === "video") {
       mutation.mutate({
         kind,
         prompt: prompt.trim(),
-        ...(kind === "image" && sourceImageDataUri
-          ? { imageDataUri: sourceImageDataUri }
-          : {}),
-      } as { kind: Kind; prompt: string; imageDataUri?: string });
+        ...(kind === "image" && sourceImageDataUri ? { imageDataUri: sourceImageDataUri } : {}),
+      });
+    }
   };
 
   return (
@@ -407,7 +406,7 @@ export default function CreateScreen() {
           <View style={{ marginTop: Space.lg }}>
             {busy && !result?.url && (
               <FlskoCard>
-                <AgentProcessing label="جاري التوليد عبر طبقات فلسقوا" />
+                <AgentProcessing mode={kind === "video" ? "video" : kind === "music" ? "music" : "image"} />
                 {waitLeft !== null && waitLeft > 0 && (
                   <View style={styles.waitRow}>
                     <Clock size={14} color={colors.muted} />

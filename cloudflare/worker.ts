@@ -24,7 +24,7 @@ type D1Database = { prepare: (query: string) => D1Statement };
 
 export interface Env {
   DB: D1Database;
-  HF_TOKEN: string;
+  HF_TOKEN?: string;
   FLSKO_HF_MODEL?: string;
   FLSKO_IMAGE_PROVIDER_URL?: string;
   FLSKO_VIDEO_PROVIDER_URL?: string;
@@ -36,6 +36,12 @@ export interface Env {
   FLSKO_GEMINI_API_KEY?: string;
   FLSKO_GEMINI_MODEL?: string;
   FLSKO_TUTOR_SECRET?: string;
+  FLSKO_MAIL_FROM?: string;
+  RESEND_API_KEY?: string;
+  FLSKO_RESEND_API_KEY?: string;
+  FLSKO_EMAIL_HOOK_URL?: string;
+  FLSKO_EMAIL_HOOK_SECRET?: string;
+  FLSKO_RESET_DEBUG?: string;
   GOOGLE_OAUTH_CLIENT_ID: string;
   GOOGLE_OAUTH_CLIENT_SECRET: string;
   GOOGLE_OAUTH_REDIRECT_URI: string;
