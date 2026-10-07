@@ -510,8 +510,94 @@ async function mediaStatus(env?: Env) {
     voice: { selected: "android-tts", layers: [layer("android-tts", "Android TTS", "on-device", 1, true, "الأساسي على الجهاز"), layer("qwen3-tts", "Qwen3-TTS Space", "cloud-open-queue", 2, true, "اختُبر وأعاد ملف صوت"), layer("google-translate-tts", "Google Translate TTS", "unofficial", 3, true, "غير رسمي"), layer("responsivevoice-tts", "ResponsiveVoice", "unofficial", 4, true, "غير رسمي"), layer("voder", "VODER", "self-hosted-open", 5, Boolean(env?.FLSKO_VODER_API_URL), env?.FLSKO_VODER_API_URL ? "مهيأ" : "يحتاج FLSKO_VODER_API_URL")] },
   };
 }
-async function generateOpenImage(prompt: string, env: Env) {
+async function generateOpenImage(prompt: string, env: Env, sourceImage?: string) {
+  const hasSource = Boolean(sourceImage && sourceImage.length > 32);
+  const sourceB64 = hasSource && sourceImage!.startsWith("data:")
+    ? sourceImage!.replace(/^data:image\/[^;]+;base64,/, "")
+    : hasSource ? sourceImage! : "";
+  const sourceUrl = hasSource && /^https?:\/\//i.test(sourceImage!) ? sourceImage! : "";
+
   const result = await routeWithFallback([
+    // --- Image-to-image when user uploaded a reference ---
+    ...(hasSource ? [{
+      id: "ai-horde-img2img",
+      kind: "image" as const,
+      priority: 0,
+      execute: async () => {
+        if (!sourceB64) throw new Error("no base64 source");
+        const submit = await fetch("https://aihorde.net/api/v2/generate/async", {
+          method: "POST",
+          headers: { "content-type": "application/json", apikey: "0000000000", "Client-Agent": "Flsko:1.0" },
+          body: JSON.stringify({
+            prompt: prompt.slice(0, 1000),
+            params: { n: 1, width: 512, height: 512, steps: 25, denoising_strength: 0.55 },
+            models: ["stable_diffusion"],
+            r2: true,
+            source_image: sourceB64.slice(0, 4_500_000),
+            source_processing: "img2img",
+          }),
+          signal: AbortSignal.timeout(30_000),
+        });
+        if (!submit.ok) throw new Error(`AI Horde img2img submit failed: ${submit.status}`);
+        const job = await submit.json() as { id?: string };
+        if (!job.id) throw new Error("AI Horde img2img no job");
+        for (let i = 0; i < IMAGE_QUEUE_ROUNDS; i++) {
+          await new Promise((r) => setTimeout(r, 3000));
+          const check = await fetch(`https://aihorde.net/api/v2/generate/status/${job.id}`, {
+            headers: { apikey: "0000000000", "Client-Agent": "Flsko:1.0" },
+            signal: AbortSignal.timeout(15_000),
+          });
+          if (!check.ok) continue;
+          const st = await check.json() as { done?: boolean; generations?: Array<{ img?: string }> };
+          if (st.done && st.generations?.[0]?.img) {
+            return {
+              url: st.generations[0].img,
+              provider: "ai-horde-img2img",
+              status: "completed" as const,
+              message: "تم تعديل الصورة وفق وصفك (صورة → صورة).",
+              estimatedWaitSec: 0,
+            };
+          }
+        }
+        throw new Error("AI Horde img2img timed out");
+      },
+    }] : []),
+    ...(hasSource && (env.FLSKO_IMAGE_PROVIDER_URL) ? [{
+      id: "configured-img2img",
+      kind: "image" as const,
+      priority: 0.5,
+      execute: async () => {
+        const response = await fetch(env.FLSKO_IMAGE_PROVIDER_URL!, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            prompt,
+            image: sourceImage,
+            mode: "img2img",
+            model: "stable-diffusion-xl",
+          }),
+          signal: AbortSignal.timeout(90_000),
+        });
+        if (!response.ok) throw new Error(`configured img2img failed: ${response.status}`);
+        const payload = await response.json().catch(() => ({})) as { url?: string; image_url?: string };
+        const url = payload.url || payload.image_url;
+        if (!url) throw new Error("configured img2img returned no asset");
+        return { url, provider: "open-source-img2img", status: "completed" as const, message: "تعديل عبر مزودك المخصص.", estimatedWaitSec: 0 };
+      },
+    }] : []),
+    ...(hasSource && sourceUrl ? [{
+      id: "pollinations-img2img",
+      kind: "image" as const,
+      priority: 0.7,
+      execute: async () => {
+        const seed = Math.floor(Math.random() * 1_000_000);
+        const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?model=flux&width=1024&height=1024&nologo=true&seed=${seed}&image=${encodeURIComponent(sourceUrl)}`;
+        const response = await fetch(url, { headers: { accept: "image/*" }, signal: AbortSignal.timeout(90_000) });
+        if (!response.ok) throw new Error(`Pollinations img2img failed: ${response.status}`);
+        return { url, provider: "pollinations-img2img", status: "completed" as const, message: "تعديل تقريبي عبر Pollinations مع صورتك المرجعية.", estimatedWaitSec: 0 };
+      },
+    }] : []),
+
     ...(env.FLSKO_IMAGE_PROVIDER_URL ? [{ id: "configured-open-provider", kind: "image" as const, priority: 1, execute: async () => {
       const response = await fetch(env.FLSKO_IMAGE_PROVIDER_URL!, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt, model: "stable-diffusion-xl" }) });
       if (!response.ok) throw new Error(`configured image provider failed: ${response.status}`);
@@ -1639,7 +1725,21 @@ export default {
           if (!id) return trpcError("معرّف المحادثة مطلوب", 400, origin);
           return trpcResult(await pinConversationAsTask(env, user.id, id), origin);
         }
-        if (path === "agent.generate") { const value = input || {}; if (typeof value.prompt !== "string" || value.prompt.trim().length < 3) return trpcError("نوع الوسائط أو الوصف غير صالح", 400, origin); if (value.kind === "video") return trpcResult(await submitWanVideo(value.prompt.trim(), env), origin); if (value.kind !== "image") return trpcError("نوع الوسائط غير صالح", 400, origin); return trpcResult(await generateOpenImage(value.prompt.trim(), env), origin); }
+        if (path === "agent.generate") {
+          const value = input || {};
+          if (typeof value.prompt !== "string" || value.prompt.trim().length < 3) return trpcError("نوع الوسائط أو الوصف غير صالح", 400, origin);
+          if (value.kind === "video") return trpcResult(await submitWanVideo(value.prompt.trim(), env), origin);
+          if (value.kind !== "image") return trpcError("نوع الوسائط غير صالح", 400, origin);
+          const sourceImage = typeof value.imageDataUri === "string" && value.imageDataUri.startsWith("data:image/")
+            ? value.imageDataUri
+            : typeof value.imageUrl === "string" && /^https?:\/\//i.test(value.imageUrl)
+              ? value.imageUrl
+              : undefined;
+          const finalPrompt = sourceImage
+            ? `Edit and improve this reference image according to: ${value.prompt.trim()}`
+            : value.prompt.trim();
+          return trpcResult(await generateOpenImage(finalPrompt, env, sourceImage), origin);
+        }
         if (path === "agent.mediaJob") { const value = input || {}; if (typeof value.jobId !== "string" || value.jobId.length < 8) return trpcError("رقم المهمة غير صالح", 400, origin); return trpcResult(await pollWanVideo(value.jobId, env), origin); }
         if (path === "agent.music") { const value = input || {}; if (typeof value.prompt !== "string" || value.prompt.trim().length < 3) return trpcError("وصف الموسيقى غير صالح", 400, origin); return trpcResult(await generateOpenMusic(value.prompt.trim(), env), origin); }
         if (path === "agent.speak") { const value = input || {}; if (typeof value.text !== "string" || value.text.trim().length < 1) return trpcError("النص مطلوب", 400, origin); return trpcResult(await generateSpeech(value.text.trim(), typeof value.lang === "string" ? value.lang : "ar"), origin); }

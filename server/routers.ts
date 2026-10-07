@@ -126,7 +126,7 @@ export const appRouter = router({
       }),
 
     generate: protectedProcedure
-      .input(z.object({ kind: z.enum(["image", "video"]), prompt: z.string().trim().min(3).max(4000) }))
+      .input(z.object({ kind: z.enum(["image", "video"]), prompt: z.string().trim().min(3).max(4000), imageDataUri: z.string().max(5_000_000).optional(), imageUrl: z.string().url().optional() }))
       .mutation(async ({ ctx, input }) => {
         assertRateLimit(ctx.user.id, `generate-${input.kind}`, 6);
         if (input.kind === "video") {

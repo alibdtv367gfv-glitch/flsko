@@ -13,7 +13,9 @@ import {
   View,
 } from "react-native";
 import * as Haptics from "expo-haptics";
-import { Image as ImageIcon, Video, Music2, Sparkles, Lightbulb, Clock } from "lucide-react-native";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system/legacy";
+import { Image as ImageIcon, Video, Music2, Sparkles, Lightbulb, Clock, ImagePlus, X } from "lucide-react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { AgentProcessing } from "@/components/agent-processing";
@@ -34,7 +36,7 @@ const kindMeta: Record<
   image: {
     label: "صورة",
     title: "اصنع صورة",
-    helper: "صف المشهد، الإضاءة، والأسلوب — فلسقوا يختار أفضل طبقة متاحة.",
+    helper: "أنشئ من نص، أو ارفع صورة وعدّلها بالوصف — فلسقوا يختار أفضل طبقة.",
     Icon: ImageIcon,
     wait: 45,
   },
@@ -64,6 +66,8 @@ export default function CreateScreen() {
   const { isAuthenticated } = useAuth();
   const [kind, setKind] = useState<Kind>("image");
   const [prompt, setPrompt] = useState("");
+  const [sourceImageUri, setSourceImageUri] = useState<string | null>(null);
+  const [sourceImageDataUri, setSourceImageDataUri] = useState<string | null>(null);
   const [result, setResult] = useState<{
     status?: string;
     url?: string;
@@ -162,6 +166,51 @@ export default function CreateScreen() {
   const busy = mutation.isPending || musicMutation.isPending || polling;
   const Icon = meta.Icon;
 
+  const pickReferenceImage = async () => {
+    tap();
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("الإذن مطلوب", "اسمح بالوصول للصور لرفع صورة مرجعية للتعديل.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      quality: 0.85,
+      base64: true,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    setSourceImageUri(asset.uri);
+    let dataUri = asset.base64
+      ? `data:${asset.mimeType || "image/jpeg"};base64,${asset.base64}`
+      : null;
+    if (!dataUri) {
+      try {
+        const b64 = await FileSystem.readAsStringAsync(asset.uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        dataUri = `data:image/jpeg;base64,${b64}`;
+      } catch {
+        Alert.alert("تعذر قراءة الصورة", "جرّب صورة أصغر أو صيغة JPEG/PNG.");
+        return;
+      }
+    }
+    // Limit ~3.5MB base64 payload for Worker
+    if (dataUri.length > 3_800_000) {
+      Alert.alert("الصورة كبيرة", "اختر صورة أصغر قليلًا (أقل من حوالي 2.5 ميجا).");
+      setSourceImageUri(null);
+      setSourceImageDataUri(null);
+      return;
+    }
+    setSourceImageDataUri(dataUri);
+  };
+
+  const clearReferenceImage = () => {
+    setSourceImageUri(null);
+    setSourceImageDataUri(null);
+  };
+
   const submit = () => {
     tap();
     if (!isAuthenticated) {
@@ -177,7 +226,14 @@ export default function CreateScreen() {
     }
     setResult(null);
     if (kind === "music") musicMutation.mutate({ prompt: prompt.trim() });
-    else mutation.mutate({ kind, prompt: prompt.trim() });
+    else
+      mutation.mutate({
+        kind,
+        prompt: prompt.trim(),
+        ...(kind === "image" && sourceImageDataUri
+          ? { imageDataUri: sourceImageDataUri }
+          : {}),
+      } as { kind: Kind; prompt: string; imageDataUri?: string });
   };
 
   return (
@@ -209,6 +265,10 @@ export default function CreateScreen() {
                   tap();
                   setKind(item);
                   setResult(null);
+                  if (item !== "image") {
+                    setSourceImageUri(null);
+                    setSourceImageDataUri(null);
+                  }
                 }}
                 style={[
                   styles.modeItem,
@@ -258,9 +318,69 @@ export default function CreateScreen() {
           <View style={styles.tipRow}>
             <Lightbulb size={15} color={colors.warning} />
             <Text style={[styles.tip, { color: colors.muted }]}>
-              أضف الحركة، الإضاءة، العدسة والمزاج لنتيجة أدق.
+              {kind === "image"
+                ? "يمكنك رفع صورة لتعديلها، أو الاعتماد على النص فقط للإنشاء من الصفر."
+                : "أضف الحركة، الإضاءة، العدسة والمزاج لنتيجة أدق."}
             </Text>
           </View>
+
+          {kind === "image" && (
+            <View style={{ marginTop: 14 }}>
+              <Text style={{ color: colors.muted, fontSize: 12, fontWeight: "700", textAlign: "right", marginBottom: 8 }}>
+                صورة مرجعية (اختياري — للتعديل)
+              </Text>
+              {sourceImageUri ? (
+                <View style={{ position: "relative" }}>
+                  <Image
+                    source={{ uri: sourceImageUri }}
+                    style={{ width: "100%", height: 180, borderRadius: 16 }}
+                    resizeMode="cover"
+                  />
+                  <Pressable
+                    onPress={clearReferenceImage}
+                    style={{
+                      position: "absolute",
+                      top: 10,
+                      left: 10,
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: "rgba(0,0,0,0.55)",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <X size={18} color="#fff" />
+                  </Pressable>
+                  <Text style={{ color: colors.primary, fontSize: 11, fontWeight: "700", marginTop: 8, textAlign: "right" }}>
+                    سيتم تعديل هذه الصورة حسب وصفك
+                  </Text>
+                </View>
+              ) : (
+                <Pressable
+                  onPress={() => void pickReferenceImage()}
+                  style={{
+                    minHeight: 52,
+                    borderRadius: 16,
+                    borderWidth: 1.5,
+                    borderStyle: "dashed",
+                    borderColor: colors.border,
+                    backgroundColor: colors.background,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                  }}
+                >
+                  <ImagePlus size={20} color={colors.primary} />
+                  <Text style={{ color: colors.primary, fontWeight: "800", fontSize: 13 }}>
+                    رفع صورة للتعديل
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          )}
+
           <Pressable
             onPress={submit}
             disabled={busy}
@@ -279,7 +399,7 @@ export default function CreateScreen() {
             ) : (
               <Sparkles size={18} color="#fff" />
             )}
-            <Text style={styles.ctaText}>{busy ? "فلسقوا يعمل…" : "ابدأ الإنشاء"}</Text>
+            <Text style={styles.ctaText}>{busy ? "فلسقوا يعمل…" : sourceImageDataUri && kind === "image" ? "عدّل الصورة" : "ابدأ الإنشاء"}</Text>
           </Pressable>
         </FlskoCard>
 
