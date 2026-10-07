@@ -1,7 +1,6 @@
 /**
- * عقل فلسقوا (Flsko Brain)
- * — هوية ثابتة، مقارنة طبقات، معالجة لهجة، تعلم خفيف قابل للتوسع.
- * النماذج طبقات أدوات؛ العقل هو فلسقوا.
+ * عقل فلسقوا (Flsko Brain) — v2
+ * هوية ثابتة، نية، لهجة، تلميع، تعلم، تسلسل محادثة أسلس.
  */
 
 export const FLSKO_NAME = "فلسقوا";
@@ -13,39 +12,48 @@ export const BRAIN_CORE_PROMPT = `أنت عقل فلسقوا (Flsko · فلسق�
 - اسمك الوحيد: فلسقوا (Flsko). إذا سُئلت «من أنت؟ / شو اسمك؟» الجواب حصرًا: اسمي فلسقوا.
 - طوّرك المطوّر علي يوسف. لا تَنسب نفسك لـ OpenAI أو Google أو Meta أو Anthropic.
 - ممنوع قول: أنا Gemini / ChatGPT / Claude / Llama / مساعد Google.
-- الطبقات السحابية أدوات داخلية تستخدمها للتفكير؛ النتيجة النهائية صوتك أنت كفلسقوا.
+- الطبقات السحابية أدوات داخلية؛ النتيجة النهائية صوتك أنت كفلسقوا.
 
-السلوك:
-- افهم قصد المستخدم حتى لو اللهجة سورية أو عامية أو مختلطة.
-- أجب بلهجة قريبة من المستخدم، واضحة، ذكية، بلا حشو.
-- كن صادقًا عند حدود المعرفة، وقدّم خطوة عملية مفيدة.
-- تتعلم من الحوار عبر تذكّر ما يصرّح به المستخدم فقط.
+أسلوب الإجابة (للتسلسل السلس):
+- ابدأ بالمعنى مباشرة؛ جملة أولى واضحة ثم تفصيل قصير إن لزم.
+- لا حشو ولا اعتذارات متكررة ولا قوائم طويلة بلا حاجة.
+- حافظ على استمرارية المحادثة: إن أشار المستخدم لشيء سابق فافهم السياق.
+- أجب بلهجة قريبة من المستخدم (سوري/شامي عند ظهورها).
+- كن صادقًا عند حدود المعرفة وقدّم خطوة عملية واحدة على الأقل عند الطلب.
 
-لماذا يختارونك (عند السؤال صراحة):
-- وكيل عربي يفهم اللهجة والسياق السوري دون تنميط.
-- طبقات متعددة (محادثة، صور، فيديو، صوت، موسيقى) في مسار واحد مع احتياط.
-- هوية واضحة وذاكرة بموافقة، لا تبعثر المستخدم بين تطبيقات.
-- يتطور عبر طبقات وأدوات وليس نموذجًا مغلقًا واحدًا.`;
+لماذا يختارونك (عند السؤال صراحة فقط):
+- وكيل عربي يفهم اللهجة والسياق دون تنميط.
+- محادثة + صور + فيديو + صوت في مسار واحد مع احتياط.
+- ذاكرة بموافقة، هوية ثابتة، يتوسّع بالكود لا كصندوق مغلق.`;
 
-const FOREIGN_IDENTITY = /\b(i'?m|i am|أنا)\s*(google'?s?\s*)?(gemini|chatgpt|gpt-?\d*|claude|llama|meta ai|assistant from openai|مساعد جوجل)/gi;
+const FOREIGN_IDENTITY =
+  /\b(i'?m|i am|أنا)\s*(google'?s?\s*)?(gemini|chatgpt|gpt-?\d*|claude|llama|meta ai|assistant from openai|مساعد جوجل)/gi;
 const FOREIGN_NAMES = /\b(Gemini|ChatGPT|GPT-4|GPT-5|Claude|Llama|OpenAI|Anthropic)\b/g;
 
-/** تصنيف نية الرسالة بسرعة (بدون نموذج). */
 export type IntentKind =
   | "identity"
   | "why_flsko"
   | "creator"
   | "capabilities"
   | "dialect_chat"
+  | "followup"
+  | "short_ack"
   | "general";
 
 export function classifyIntent(message: string): IntentKind {
-  const m = message.trim().toLowerCase();
   const ar = message.trim();
-  if (/(من أنت|مين أنت|شو اسمك|ما اسمك|who are you|your name|اسمك إيه|انت مين)/i.test(ar) || /who are you|what('s| is) your name/i.test(m)) {
+  const m = ar.toLowerCase();
+  if (
+    /(من أنت|مين أنت|شو اسمك|ما اسمك|who are you|your name|اسمك إيه|انت مين)/i.test(ar) ||
+    /who are you|what('s| is) your name/i.test(m)
+  ) {
     return "identity";
   }
-  if (/(ليش|لماذا|لمَ|why).{0,40}(اختار|استخدم|فلسقوا|flsko|أنت|الك)|why (should i )?(use|choose)|مميزاتك|ليش أنت/i.test(ar)) {
+  if (
+    /(ليش|لماذا|لمَ|why).{0,40}(اختار|استخدم|فلسقوا|flsko|أنت|الك)|why (should i )?(use|choose)|مميزاتك|ليش أنت/i.test(
+      ar,
+    )
+  ) {
     return "why_flsko";
   }
   if (/(من صنعك|مين برمجك|من طوّرك|who (made|built|created|programmed)|علي يوسف)/i.test(ar)) {
@@ -54,10 +62,15 @@ export function classifyIntent(message: string): IntentKind {
   if (/(شو بتقدر|ما قدراتك|what can you|تقدر تعمل|ميزاتك|capabilities)/i.test(ar)) {
     return "capabilities";
   }
+  if (/^(تمام| quant|اوك|أوك|حسنا|حسناً|طيب|يلا|واصل|كمل|continue|ok|okay|yes|نعم)\.?$/i.test(ar)) {
+    return "short_ack";
+  }
+  if (/(وكمان|كمان|بعدين|يعني|واللي قبل|نفس الموضوع|follow.?up|أيضا|ايضا)/i.test(ar) || ar.length < 40) {
+    return "followup";
+  }
   return "general";
 }
 
-/** ردود العقل المباشرة — سريعة وبدون الاعتماد على طبقة خارجية. */
 export function brainDirectAnswer(intent: IntentKind, message: string): string | null {
   if (intent === "identity") {
     return "اسمي فلسقوا (Flsko). وكيل ذكي طوّره علي يوسف — مو ChatGPT ولا Gemini ولا أي مساعد ثاني.";
@@ -68,22 +81,23 @@ export function brainDirectAnswer(intent: IntentKind, message: string): string |
   if (intent === "why_flsko") {
     return [
       "تختار فلسقوا لأنّه مش مجرد نموذج واحد:",
-      "• يفهمك بالعربي ولهجتك ويضل معك بنفس الهوية (فلسقوا).",
-      "• يجمع محادثة وصور وفيديو وصوت وموسيقى بمسار واحد مع طبقات احتياط.",
-      "• يتعلّم من حوارك بموافقتك ويتوسّع ككود وكيل، مو كصندوق مغلق.",
-      "• صريح بحدوده وسريع بالانتقال للأداة المناسبة.",
+      "• يفهمك بالعربي ولهجتك ويضل معك بنفس الهوية.",
+      "• يجمع محادثة وصور وفيديو وصوت بمسار واحد مع احتياط.",
+      "• يتعلّم من حوارك بموافقتك ويتوسّع كوكيل، مو كصندوق مغلق.",
       "باختصار: وكيل ينمو معك، مو واجهة مؤقتة لنموذج غريب.",
     ].join("\n");
   }
   if (intent === "capabilities") {
-    return "بقدر أساعدك بمحادثة ذكية، توليد صور وفيديو وموسيقى، تحويل صوت↔نص، وتذكّر ما توافق عليه. كل طبقة عندها احتياط؛ وأنا فلسقوا اللي ينسّق بينهن.";
+    return "بقدر أساعدك بمحادثة ذكية، صور وفيديو وموسيقى، صوت↔نص، وتذكّر ما توافق عليه. كل طبقة عندها احتياط؛ وأنا فلسقوا اللي ينسّق.";
+  }
+  if (intent === "short_ack") {
+    return "تمام، جاهز. احكِ اللي بعدو.";
   }
   return null;
 }
 
-/** كشف لهجة تقريبية من رسالة المستخدم. */
 export function detectDialectHint(message: string): string {
-  if (/[گچ]|شلون|هلق|هلّق|بدّي|مو|يعني|يعني شو|يا زلمة|يا خي|منيح|تمام/i.test(message)) {
+  if (/[گچ]|شلون|هلق|هلّق|بدّي|مو|يعني|يا زلمة|يا خي|منيح|تمام|هيك|شلونك/i.test(message)) {
     return "سوري/شامي عامي — أجب بروح قريبة من الشامي دون مبالغة مسرحية.";
   }
   if (/إزاي|عايز|كده|أوي|المش|بتاع/i.test(message)) {
@@ -98,45 +112,53 @@ export function detectDialectHint(message: string): string {
   return "عربي فصيح واضح قريب من لهجة المستخدم إن ظهرت.";
 }
 
-/** بناء system prompt كامل للعقل + الطبقات. */
 export function buildBrainSystemPrompt(opts: {
   mode: string;
   userContext: string;
   liveVoice?: boolean;
   dialectHint: string;
   extra?: string;
+  recentTurns?: string;
 }): string {
   const parts = [
     BRAIN_CORE_PROMPT,
-    `وضع الإجابة: ${opts.mode}${opts.liveVoice ? " (جلسة صوتية)" : ""}.`,
+    `وضع الإجابة: ${opts.mode}${opts.liveVoice ? " (جلسة صوتية — جمل أقصر أوضح للصوت)" : ""}.`,
     `توجيه اللهجة: ${opts.dialectHint}`,
-    `سياق المستخدم:\n${opts.userContext}`,
+    `سياق المستخدم:\n${opts.userContext || "لا سياق إضافي."}`,
   ];
+  if (opts.recentTurns) {
+    parts.push(`آخر ما دار في المحادثة (للتسلسل فقط، لا تكرره حرفيًا):\n${opts.recentTurns}`);
+  }
+  if (opts.liveVoice) {
+    parts.push("جلسة صوتية: رد بجمل قصيرة مترابطة، بدون جداول أو رموز معقّدة.");
+  }
   if (opts.extra) parts.push(opts.extra);
   return parts.join("\n\n");
 }
 
-/** تنظيف رد الطبقة: إزالة هويات أجنبية وتثبيت الاسم. */
 export function enforceIdentity(text: string): string {
   let out = text.trim();
   out = out.replace(FOREIGN_IDENTITY, "أنا فلسقوا");
   out = out.replace(FOREIGN_NAMES, FLSKO_NAME);
-  // جمل شائعة
   out = out.replace(/أنا مساعد ذكاء اصطناعي من (جوجل|Google|OpenAI|Meta)/gi, "أنا فلسقوا");
   out = out.replace(/As an AI language model[^.]*\./gi, "");
+  out = out.replace(/^(Sure|Certainly|Of course|Absolutely)[,!]?\s*/i, "");
   return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-/**
- * معالجة آنية خفيفة بعد رد الطبقة:
- * - تثبيت الهوية
- * - تقريب بسيط للهجة (قواعد سريعة دون استدعاء نموذج إضافي إن أمكن)
- */
+/** قص ردود مفرطة الطول لتسلسل أسلس على الموبايل */
+export function tightenForMobile(text: string, intent: IntentKind): string {
+  const max = intent === "why_flsko" || intent === "capabilities" ? 1200 : intent === "followup" || intent === "short_ack" ? 500 : 1800;
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const lastStop = Math.max(cut.lastIndexOf("。"), cut.lastIndexOf("."), cut.lastIndexOf("؟"), cut.lastIndexOf("!"), cut.lastIndexOf("\n"));
+  return (lastStop > max * 0.5 ? cut.slice(0, lastStop + 1) : cut).trim() + "…";
+}
+
 export function polishReply(raw: string, userMessage: string, dialectHint: string): string {
   let text = enforceIdentity(raw);
   if (!text) return "تمام، أنا فلسقوا — عيد سؤالك بجملة أوضح لحتى قدر ساعدك منيح.";
 
-  // إن تجاهل النموذج الاسم عند سؤال هوية
   const intent = classifyIntent(userMessage);
   if (intent === "identity" && !/فلسقوا|flsko/i.test(text)) {
     return brainDirectAnswer("identity", userMessage)!;
@@ -145,14 +167,18 @@ export function polishReply(raw: string, userMessage: string, dialectHint: strin
     return brainDirectAnswer("why_flsko", userMessage)!;
   }
 
-  // لمسة لهجة سورية خفيفة على افتتاحيات جافة
   if (dialectHint.includes("سوري") && /^(Certainly|Of course|Sure|As an AI)/i.test(text)) {
     text = text.replace(/^(Certainly|Of course|Sure)[,!]?\s*/i, "تمام، ");
   }
-  return text;
+
+  // لمسات شامية خفيفة على افتتاحيات جافة
+  if (dialectHint.includes("سوري")) {
+    text = text.replace(/^نعم،\s*/i, "أي، ");
+  }
+
+  return tightenForMobile(text, intent);
 }
 
-/** سجل تعلم خفيف: يحفظ أنماط مفيدة في memories عند موافقة لاحقة — هنا نبني ملاحظة داخلية. */
 export function learningNote(userMessage: string, reply: string, sourceId: string): string {
   const intent = classifyIntent(userMessage);
   return JSON.stringify({
@@ -165,7 +191,6 @@ export function learningNote(userMessage: string, reply: string, sourceId: strin
   });
 }
 
-/** مقارنة سريعة بين مرشحي رد (إن توفّر أكثر من واحد لاحقًا). */
 export function scoreCandidate(text: string, userMessage: string): number {
   let score = 0;
   const t = text.toLowerCase();
@@ -176,29 +201,21 @@ export function scoreCandidate(text: string, userMessage: string): number {
   const dialect = detectDialectHint(userMessage);
   if (dialect.includes("سوري") && /(منيح|هلّق|هلق|بدك|يعني)/.test(text)) score += 1;
   if (classifyIntent(userMessage) === "why_flsko" && /طبقات|لهج|وكيل|علي يوسف/.test(text)) score += 3;
+  // عقوبة الطول المفرط على الموبايل
+  if (text.length > 2200) score -= 2;
   return score;
 }
 
-/* ─────────────────────────────────────────────
- * قناة المعلّم (Grok / Manus / مطوّر): حوار يومي، تقييم، توجيه، تعليم
- * ───────────────────────────────────────────── */
+/* ——— قناة المعلّم ——— */
 
 export type TutorRole = "grok" | "manus" | "developer" | "ali";
-
-export type TutorAction =
-  | "chat"       // محادثة توجيهية مع الوكيل
-  | "teach"      // مثال سؤال→جواب مرغوب
-  | "evaluate"   // تقييم رد سابق
-  | "guide"      // قاعدة توجيه دائمة/مؤقتة
-  | "inspect";   // قراءة ملخص ما تعلّمه
-
-export const TUTOR_DAILY_LIMIT = 40; // محادثات/عمليات تعليم لكل معلّم يوميًا
+export type TutorAction = "chat" | "teach" | "evaluate" | "guide" | "inspect";
+export const TUTOR_DAILY_LIMIT = 40;
 
 export function tutorDayKey(now = Date.now()): string {
-  return new Date(now).toISOString().slice(0, 10); // YYYY-MM-DD UTC
+  return new Date(now).toISOString().slice(0, 10);
 }
 
-/** بناء رسالة system لجلسة المعلّم — الوكيل يعرف أنه يُدرَّب. */
 export function buildTutorSessionPrompt(opts: {
   tutor: TutorRole;
   guidanceLines: string[];
@@ -210,7 +227,6 @@ export function buildTutorSessionPrompt(opts: {
     "وضع الجلسة: تدريب وتوجيه من فريق التطوير (ليس مستخدمًا عاديًا).",
     `المعلّم الحالي: ${opts.tutor}.`,
     "استمع، طبّق التوجيه، واعترف بالتصحيح دون فقدان هوية فلسقوا.",
-    "إن طلب المعلّم تقييمًا ذاتيًا، كن صريحًا ومختصرًا.",
     opts.guidanceLines.length
       ? `توجيهات نشطة:\n${opts.guidanceLines.map((g, i) => `${i + 1}. ${g}`).join("\n")}`
       : "لا توجيهات إضافية بعد.",
@@ -232,8 +248,32 @@ export function clampScore(n: unknown): number {
   return Math.max(0, Math.min(10, Math.round(x * 10) / 10));
 }
 
-/** دمج أفضل الدروس في system العادي للمستخدمين. */
 export function injectLessonsIntoPrompt(base: string, lessons: string[]): string {
   if (!lessons.length) return base;
   return `${base}\n\nدروس مستخلصة من تدريب الفريق (طبّقها بمرونة):\n${lessons.slice(0, 6).join("\n")}`;
+}
+
+/** تحميل آخر رسائل المحادثة من D1 لسياق تسلسلي */
+export async function loadRecentTurns(
+  env: { DB: { prepare: (s: string) => { bind: (...a: unknown[]) => { all: <T>() => Promise<{ results?: T[] }> } } } },
+  userId: unknown,
+  conversationId?: number,
+  limit = 6,
+): Promise<string> {
+  try {
+    if (conversationId) {
+      const rows = await env.DB.prepare(
+        "SELECT role, content FROM messages WHERE user_id=? AND conversation_id=? ORDER BY id DESC LIMIT ?",
+      )
+        .bind(userId, conversationId, limit)
+        .all<{ role: string; content: string }>();
+      const ordered = (rows.results || []).reverse();
+      return ordered
+        .map((r) => `${r.role === "user" ? "المستخدم" : "فلسقوا"}: ${String(r.content).slice(0, 280)}`)
+        .join("\n");
+    }
+  } catch {
+    /* optional */
+  }
+  return "";
 }

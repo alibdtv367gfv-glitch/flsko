@@ -8,6 +8,7 @@ import {
   detectDialectHint,
   formatLessonLine,
   injectLessonsIntoPrompt,
+  loadRecentTurns,
   learningNote,
   polishReply,
   scoreCandidate,
@@ -104,7 +105,7 @@ async function ensureDefaultConversation(env: Env, userId: unknown, mode = "natu
     "INSERT INTO conversations(user_id,title,mode,pinned_task,updated_at,created_at) VALUES(?,?,?,0,?,?)"
   ).bind(userId, "محادثة جديدة", mode, now, now).run();
   return {
-    id: Number(res.meta.last_row_id),
+    id: Number((res as { meta: { last_row_id: number | string } }).meta.last_row_id),
     title: "محادثة جديدة",
     mode,
     pinnedTask: 0,
@@ -139,7 +140,7 @@ async function createConversation(env: Env, userId: unknown, title?: string, mod
   const res = await env.DB.prepare(
     "INSERT INTO conversations(user_id,title,mode,pinned_task,updated_at,created_at) VALUES(?,?,?,0,?,?)"
   ).bind(userId, (title || "محادثة جديدة").slice(0, 80), mode, now, now).run();
-  return { id: Number(res.meta.last_row_id), title: title || "محادثة جديدة", mode, pinnedTask: 0, updatedAt: now };
+  return { id: Number((res as { meta: { last_row_id: number | string } }).meta.last_row_id), title: title || "محادثة جديدة", mode, pinnedTask: 0, updatedAt: now };
 }
 
 async function pinConversationAsTask(env: Env, userId: unknown, conversationId: number) {
@@ -530,7 +531,7 @@ async function generateOpenMusic(prompt: string, env: Env) {
   const result = await routeWithFallback(providers, Date.now(), routerHooks(env));
   return { ...result.value, provider: result.provider, attempted: result.attempted };
 }
-async function submitWanVideo(prompt: string, env: Env) {
+async function submitWanVideo(prompt: string, env: Env): Promise<Record<string, unknown>> {
   const space = (env.FLSKO_WAN_SPACE || "https://wan-ai-wan2-1.hf.space").replace(/\/+$/, "");
   const headers: Record<string, string> = { "content-type": "application/json", accept: "application/json", "user-agent": "Flsko/1.0" };
   if (env.HF_TOKEN) headers.authorization = `Bearer ${env.HF_TOKEN}`;
@@ -567,8 +568,8 @@ async function submitWanVideo(prompt: string, env: Env) {
       if (id) return { status: "queued" as const, provider: "custom-video", jobId: id, message: "مهمة فيديو لدى مزودك." };
       throw new Error("custom video provider returned no asset");
     } }] : []),
-  ], Date.now(), routerHooks(env));
-  return { ...result.value, provider: result.provider, attempted: result.attempted };
+  ] as any, Date.now(), routerHooks(env));
+  return { ...(result.value as object), provider: result.provider, attempted: result.attempted };
 }
 async function pollWanVideo(jobId: string, env: Env) {
   const space = (env.FLSKO_WAN_SPACE || "https://wan-ai-wan2-1.hf.space").replace(/\/+$/, "");
@@ -991,12 +992,14 @@ async function runChat(message: string, mode: string, user: Record<string, unkno
   }
 
   const userContext = await buildUserContext(user, env);
+  const recentTurns = await loadRecentTurns(env, user.id, options?.conversationId, 6);
   let system = buildBrainSystemPrompt({
     mode,
     userContext,
     liveVoice: options?.liveVoice,
     dialectHint,
     extra: options?.liveVoice ? VOICE_LIVE_BOOTSTRAP : undefined,
+    recentTurns: recentTurns || undefined,
   });
   try {
     await ensureBrainTables(env);

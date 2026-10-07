@@ -14,7 +14,8 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 const THEME_STORAGE_KEY = "flsko-color-scheme";
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const systemScheme = useSystemColorScheme() ?? "light";
+  const systemSchemeRaw = useSystemColorScheme();
+  const systemScheme: ColorScheme = systemSchemeRaw === "dark" ? "dark" : "light";
   const [colorScheme, setColorSchemeState] = useState<ColorScheme>(systemScheme);
   const [hasLoadedPreference, setHasLoadedPreference] = useState(false);
 

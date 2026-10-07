@@ -30,19 +30,55 @@ export default function CreateScreen() {
   const utils = trpc.useUtils();
   const mutation = trpc.agent.generate.useMutation({
     onSuccess: async (data) => {
-      setResult(data);
-      const est = typeof data.estimatedWaitSec === "number" ? data.estimatedWaitSec : kind === "video" ? 120 : kind === "image" ? 45 : 30;
-      if (data.status === "queued" && data.jobId) {
+      const anyData = data as {
+        status?: string;
+        url?: string;
+        jobId?: string;
+        message?: string;
+        provider?: string;
+        estimatedWaitSec?: number;
+      };
+      setResult({
+        status: anyData.status || "completed",
+        url: anyData.url,
+        message: anyData.message,
+        provider: anyData.provider,
+        jobId: anyData.jobId,
+        estimatedWaitSec: anyData.estimatedWaitSec,
+      });
+      const est =
+        typeof anyData.estimatedWaitSec === "number"
+          ? anyData.estimatedWaitSec
+          : kind === "video"
+            ? 120
+            : kind === "image"
+              ? 45
+              : 30;
+      if (anyData.status === "queued" && anyData.jobId) {
+        const jobId = anyData.jobId;
         setWaitLeft(est);
         setPolling(true);
-        // Auto-poll until complete or budget exhausted (~2–3 min for video)
         const budgetMs = Math.max(est, 90) * 1000;
         const started = Date.now();
         while (Date.now() - started < budgetMs) {
           await new Promise((r) => setTimeout(r, 8000));
           try {
-            const job = await utils.client.agent.mediaJob.mutate({ jobId: data.jobId });
-            setResult(job);
+            const job = (await utils.client.agent.mediaJob.mutate({ jobId })) as {
+              status?: string;
+              url?: string;
+              estimatedWaitSec?: number;
+              message?: string;
+              provider?: string;
+              jobId?: string;
+            };
+            setResult({
+              status: job.status || "queued",
+              url: job.url,
+              message: job.message,
+              provider: job.provider,
+              jobId: job.jobId || jobId,
+              estimatedWaitSec: job.estimatedWaitSec,
+            });
             if (job.status === "completed" && job.url) {
               setWaitLeft(0);
               setPolling(false);
@@ -55,7 +91,7 @@ export default function CreateScreen() {
         }
         setPolling(false);
       } else {
-        setWaitLeft(data.status === "completed" ? 0 : est);
+        setWaitLeft(anyData.status === "completed" ? 0 : est);
         setPolling(false);
       }
     },
