@@ -155,7 +155,7 @@ const config: ExpoConfig = {
     apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || "https://flsko-api.flsko.workers.dev",
     appChannel: process.env.EXPO_PUBLIC_APP_CHANNEL || "production",
     eas: {
-      projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID || undefined,
+      projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID || "67ba7788-e6c2-4cd7-8c96-76e2f208739b",
     },
   },
 };
