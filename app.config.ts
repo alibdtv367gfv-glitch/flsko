@@ -41,7 +41,7 @@ const env = {
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
-  owner: "alityy",
+  owner: "alityys-team",
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
@@ -136,7 +136,7 @@ const config: ExpoConfig = {
       },
     ],
     // Offline ONNX TTS (Android). Requires Expo development build — not Expo Go.
-    "./modules/voder-offline/plugin/src/index.js",
+    // "./modules/voder-offline/plugin/src/index.js",
   ],
   experiments: {
     typedRoutes: true,

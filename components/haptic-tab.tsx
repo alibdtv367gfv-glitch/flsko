@@ -1,15 +1,13 @@
-import { PlatformPressable } from "@react-navigation/elements";
+import { Pressable, type PressableProps, Platform } from "react-native";
 import * as Haptics from "expo-haptics";
-import type { ComponentProps } from "react";
 
-type Props = ComponentProps<typeof PlatformPressable>;
-
-export function HapticTab(props: Props) {
+/** Tab button with light haptic feedback — no react-navigation dependency (SDK 57). */
+export function HapticTab(props: PressableProps) {
   return (
-    <PlatformPressable
+    <Pressable
       {...props}
       onPressIn={(ev) => {
-        if (process.env.EXPO_OS === "ios") {
+        if (Platform.OS === "ios") {
           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
         props.onPressIn?.(ev);
