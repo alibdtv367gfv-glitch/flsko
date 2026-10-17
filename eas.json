@@ -17,8 +17,10 @@
       },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://flsko-api.flsko.workers.dev",
-        "EXPO_PUBLIC_APP_CHANNEL": "preview"
-      }
+        "EXPO_PUBLIC_APP_CHANNEL": "preview",
+        "EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK": "1"
+      },
+      "credentialsSource": "local"
     },
     "apk": {
       "distribution": "internal",
@@ -28,8 +30,10 @@
       },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://flsko-api.flsko.workers.dev",
-        "EXPO_PUBLIC_APP_CHANNEL": "preview"
-      }
+        "EXPO_PUBLIC_APP_CHANNEL": "preview",
+        "EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK": "1"
+      },
+      "credentialsSource": "local"
     },
     "production": {
       "channel": "production",
@@ -39,8 +43,10 @@
       },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://flsko-api.flsko.workers.dev",
-        "EXPO_PUBLIC_APP_CHANNEL": "production"
-      }
+        "EXPO_PUBLIC_APP_CHANNEL": "production",
+        "EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK": "1"
+      },
+      "credentialsSource": "local"
     }
   },
   "submit": {
