@@ -13,27 +13,31 @@
       "distribution": "internal",
       "channel": "preview",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "image": "latest"
       },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://flsko-api.flsko.workers.dev",
         "EXPO_PUBLIC_APP_CHANNEL": "preview",
         "EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK": "1"
       },
-      "credentialsSource": "local"
+      "credentialsSource": "local",
+      "resourceClass": "medium"
     },
     "apk": {
       "distribution": "internal",
       "channel": "preview",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "image": "latest"
       },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://flsko-api.flsko.workers.dev",
         "EXPO_PUBLIC_APP_CHANNEL": "preview",
         "EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK": "1"
       },
-      "credentialsSource": "local"
+      "credentialsSource": "local",
+      "resourceClass": "medium"
     },
     "production": {
       "channel": "production",
