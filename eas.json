@@ -17,12 +17,12 @@
         "image": "latest"
       },
       "env": {
+        "EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK": "1",
         "EXPO_PUBLIC_API_BASE_URL": "https://flsko-api.flsko.workers.dev",
-        "EXPO_PUBLIC_APP_CHANNEL": "preview",
-        "EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK": "1"
+        "EXPO_PUBLIC_APP_CHANNEL": "preview"
       },
       "credentialsSource": "local",
-      "resourceClass": "medium"
+      "resourceClass": "large"
     },
     "apk": {
       "distribution": "internal",
@@ -32,12 +32,12 @@
         "image": "latest"
       },
       "env": {
+        "EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK": "1",
         "EXPO_PUBLIC_API_BASE_URL": "https://flsko-api.flsko.workers.dev",
-        "EXPO_PUBLIC_APP_CHANNEL": "preview",
-        "EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK": "1"
+        "EXPO_PUBLIC_APP_CHANNEL": "preview"
       },
       "credentialsSource": "local",
-      "resourceClass": "medium"
+      "resourceClass": "large"
     },
     "production": {
       "channel": "production",
