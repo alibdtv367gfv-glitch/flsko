@@ -21,8 +21,7 @@
         "EXPO_PUBLIC_API_BASE_URL": "https://flsko-api.flsko.workers.dev",
         "EXPO_PUBLIC_APP_CHANNEL": "preview"
       },
-      "credentialsSource": "local",
-      "resourceClass": "large"
+      "credentialsSource": "local"
     },
     "apk": {
       "distribution": "internal",
@@ -36,8 +35,7 @@
         "EXPO_PUBLIC_API_BASE_URL": "https://flsko-api.flsko.workers.dev",
         "EXPO_PUBLIC_APP_CHANNEL": "preview"
       },
-      "credentialsSource": "local",
-      "resourceClass": "large"
+      "credentialsSource": "local"
     },
     "production": {
       "channel": "production",
