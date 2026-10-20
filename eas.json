@@ -25,14 +25,14 @@
     },
     "apk": {
       "distribution": "internal",
-      "channel": "preview",
+      "channel": "production",
       "android": {
         "buildType": "apk"
       },
       "env": {
         "EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK": "1",
         "EXPO_PUBLIC_API_BASE_URL": "https://flsko-api.flsko.workers.dev",
-        "EXPO_PUBLIC_APP_CHANNEL": "preview"
+        "EXPO_PUBLIC_APP_CHANNEL": "production"
       },
       "credentialsSource": "local"
     },
@@ -43,11 +43,12 @@
         "buildType": "apk"
       },
       "env": {
+        "EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK": "1",
         "EXPO_PUBLIC_API_BASE_URL": "https://flsko-api.flsko.workers.dev",
-        "EXPO_PUBLIC_APP_CHANNEL": "production",
-        "EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK": "1"
+        "EXPO_PUBLIC_APP_CHANNEL": "production"
       },
-      "credentialsSource": "local"
+      "credentialsSource": "local",
+      "distribution": "internal"
     }
   },
   "submit": {
