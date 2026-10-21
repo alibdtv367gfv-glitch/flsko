@@ -1,39 +1,24 @@
 /**
- * Custom environment loader that prioritizes system environment variables
- * over .env file values. This ensures that Manus platform-injected variables
- * are not overridden by placeholder values in .env
+ * CommonJS env loader — works under Expo config (CJS) and EAS.
+ * System env wins over .env file values.
  */
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const fs = require("fs");
+const path = require("path");
 
 const envPath = path.resolve(process.cwd(), ".env");
 
 if (fs.existsSync(envPath)) {
   const envContent = fs.readFileSync(envPath, "utf8");
-  const lines = envContent.split("\n");
-
-  lines.forEach((line) => {
-    // Skip comments and empty lines
-    if (!line || line.trim().startsWith("#")) return;
-
+  for (const line of envContent.split("\n")) {
+    if (!line || line.trim().startsWith("#")) continue;
     const match = line.match(/^([^=]+)=(.*)$/);
-    if (match) {
-      const key = match[1].trim();
-      const value = match[2].trim().replace(/^["']|["']$/g, ""); // Remove quotes
-
-      // Only set if not already defined in environment
-      if (!process.env[key]) {
-        process.env[key] = value;
-      }
-    }
-  });
+    if (!match) continue;
+    const key = match[1].trim();
+    const value = match[2].trim().replace(/^["']|["']$/g, "");
+    if (!process.env[key]) process.env[key] = value;
+  }
 }
 
-// Map system variables to Expo public variables
 const mappings = {
   VITE_APP_ID: "EXPO_PUBLIC_APP_ID",
   VITE_OAUTH_PORTAL_URL: "EXPO_PUBLIC_OAUTH_PORTAL_URL",
