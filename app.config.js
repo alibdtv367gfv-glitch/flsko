@@ -11,6 +11,7 @@ module.exports = {
   scheme: "flsko",
   userInterfaceStyle: "automatic",
   newArchEnabled: false,
+          packagingOptions: { pickFirst: ["**/libc++_shared.so","**/libfbjni.so","**/libjsi.so"] },
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.flsko.app",
@@ -79,6 +80,7 @@ module.exports = {
           enableShrinkResourcesInReleaseBuilds: false,
           usesCleartextTraffic: false,
           newArchEnabled: false,
+          packagingOptions: { pickFirst: ["**/libc++_shared.so","**/libfbjni.so","**/libjsi.so"] },
         },
       },
     ],

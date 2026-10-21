@@ -34,7 +34,8 @@
         "EXPO_PUBLIC_API_BASE_URL": "https://flsko-api.flsko.workers.dev",
         "EXPO_PUBLIC_APP_CHANNEL": "production"
       },
-      "credentialsSource": "local"
+      "credentialsSource": "local",
+      "node": "20.18.0"
     },
     "production": {
       "channel": "production",
