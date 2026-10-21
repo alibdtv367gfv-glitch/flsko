@@ -74,6 +74,7 @@ module.exports = {
           minSdkVersion: 24,
           compileSdkVersion: 35,
           targetSdkVersion: 35,
+          kotlinVersion: "2.0.21",
           enableProguardInReleaseBuilds: false,
           enableShrinkResourcesInReleaseBuilds: false,
           usesCleartextTraffic: false,
