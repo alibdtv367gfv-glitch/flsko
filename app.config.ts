@@ -47,6 +47,7 @@ const config: ExpoConfig = {
   icon: "./assets/images/icon.png",
   scheme: "flsko",
   userInterfaceStyle: "automatic",
+  newArchEnabled: false,
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
