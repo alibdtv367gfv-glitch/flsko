@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 import * as Speech from "expo-speech";
-import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
+import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "@/lib/media-stubs/expo-audio";
 import * as FileSystem from "expo-file-system/legacy";
 import { Send, Mic, Menu, Settings2, Plus } from "lucide-react-native";
 

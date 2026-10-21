@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
-import { VideoView, useVideoPlayer } from "expo-video";
+import { useAudioPlayer, useAudioPlayerStatus } from "@/lib/media-stubs/expo-audio";
+import { VideoView, useVideoPlayer } from "@/lib/media-stubs/expo-video";
 
 export function InlineAudioPlayer({ source }: { source: string }) {
   const player = useAudioPlayer(source);
