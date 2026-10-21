@@ -3,6 +3,7 @@ pnpm-lock.yaml
 server/**
 flsko_flask/**
 cloudflare/**
+modules/**
 **/.git/**
 **/__pycache__/**
 **/*.pyc

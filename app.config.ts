@@ -45,7 +45,7 @@ const config: ExpoConfig = {
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
-  scheme: env.scheme,
+  scheme: "flsko",
   userInterfaceStyle: "automatic",
   ios: {
     supportsTablet: true,
@@ -115,7 +115,7 @@ const config: ExpoConfig = {
       "expo-build-properties",
       {
         android: {
-          buildArchs: ["armeabi-v7a", "arm64-v8a"],
+          buildArchs: ["arm64-v8a"],
           minSdkVersion: 24,
           compileSdkVersion: 35,
           targetSdkVersion: 35,
@@ -134,10 +134,7 @@ const config: ExpoConfig = {
     reactCompiler: false,
   },
   updates: {
-    url: "https://flsko-api.flsko.workers.dev/api/app/manifest",
-    enabled: true,
-    checkAutomatically: "ON_LOAD",
-    fallbackToCacheTimeout: 5000,
+    enabled: false,
   },
   runtimeVersion: {
     policy: "appVersion",
