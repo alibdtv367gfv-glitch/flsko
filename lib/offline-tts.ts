@@ -1,39 +1,16 @@
 /**
- * Unified TTS: prefers native ONNX (voder-offline) on Android dev builds,
- * falls back to expo-speech (works in Expo Go).
+ * TTS for Flsko v1 APK: system expo-speech only.
+ * Native ONNX (voder-offline) is deferred until a later build.
  */
-import { Platform } from "react-native";
 import * as Speech from "expo-speech";
 
-import {
-  ensureOfflineModel,
-  initOfflineTts,
-  isOfflineModelPresent,
-  isVoderNativeAvailable,
-  PIPER_AR_MODEL,
-  releaseOfflineTts,
-  speakOffline,
-} from "../modules/voder-offline/src";
-
-export { PIPER_AR_MODEL, isVoderNativeAvailable };
-
-let offlineReady = false;
+export const PIPER_AR_MODEL = null;
+export function isVoderNativeAvailable() {
+  return false;
+}
 
 export async function prepareOfflineTts(): Promise<{ mode: "native" | "system"; ready: boolean }> {
-  if (Platform.OS !== "android" || !isVoderNativeAvailable()) {
-    return { mode: "system", ready: true };
-  }
-  try {
-    const present = await isOfflineModelPresent();
-    if (!present) {
-      await ensureOfflineModel();
-    }
-    offlineReady = await initOfflineTts();
-    return { mode: offlineReady ? "native" : "system", ready: true };
-  } catch {
-    offlineReady = false;
-    return { mode: "system", ready: true };
-  }
+  return { mode: "system", ready: true };
 }
 
 export async function speakArabic(
@@ -41,14 +18,6 @@ export async function speakArabic(
   options?: { voiceId?: string; rate?: number; pitch?: number },
 ): Promise<void> {
   await Speech.stop();
-  if (offlineReady && isVoderNativeAvailable()) {
-    try {
-      const ok = await speakOffline(text);
-      if (ok) return;
-    } catch {
-      // fall through to system TTS
-    }
-  }
   Speech.speak(text, {
     language: "ar-SA",
     voice: options?.voiceId,
@@ -62,10 +31,5 @@ export async function stopSpeaking(): Promise<void> {
 }
 
 export async function teardownOfflineTts(): Promise<void> {
-  offlineReady = false;
-  try {
-    await releaseOfflineTts();
-  } catch {
-    // ignore
-  }
+  await Speech.stop();
 }
