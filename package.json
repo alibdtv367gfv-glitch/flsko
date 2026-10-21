@@ -89,7 +89,9 @@
   "expo": {
     "autolinking": {
       "exclude": [
-        "voder-offline"
+        "voder-offline",
+        "react-native-reanimated",
+        "react-native-worklets"
       ]
     }
   }
